@@ -1,22 +1,32 @@
-# Motor Driver Controller 鈥?鍙戝竷椤?
-鍩轰簬 STM32F401 + TB6612 鐨勫洓璺洿娴佺數鏈洪┍鍔ㄥ櫒锛圔ootloader + 涓诲浐浠?+ Web 涓婁綅鏈猴級鐨?*鍙戝竷浠撳簱**銆?
-鏈粨搴撲粎鐢ㄤ簬鍙戝竷锛堜笅杞?+ 鍦ㄧ嚎涓婁綅鏈猴級锛?*椤圭洰婧愮爜涓虹鏈変粨搴擄紝涓嶅澶栧叕寮€**銆?
-## 鍦ㄧ嚎涓婁綅鏈?
-- 鍦ㄧ嚎浣跨敤锛圙itHub Pages锛夛細https://lin-haixin.github.io/motor_driver_control/web/
-- 闇€瑕?Chrome / Edge 娴忚鍣紙Web Serial API锛?
-## 鍙戝竷鐗?
-| 绫诲埆 | 鐗堟湰 | 鏂囦欢 |
-|------|------|------|
-| Web 涓婁綅鏈?| v1.0 | `release/鐢垫満涓婁綅鏈?v1.0.html`锛堢绾垮崟鏂囦欢锛?|
-| 涓诲浐浠?| v1.1.0 | `release/motor_driver_ctrl-v1.1.0.bin` / `.hex` / `.elf` |
-| Bootloader | v1.0 | `release/bootloader-v1.0.bin` / `.elf` |
+# Motor Driver Controller — 发布页
 
-## 鐩綍缁撴瀯
+基于 STM32F401 + TB6612 的四路直流电机驱动器（Bootloader + 主固件 + Web 上位机）的**发布仓库**。
+本仓库仅用于发布（下载 + 在线上位机），**项目源码为私有仓库，不对外公开**。
+
+## 在线上位机
+
+- 在线使用（GitHub Pages）：https://mumu-elec.github.io/mdc-pub/web/
+- 需要 Chrome / Edge 浏览器（Web Serial API）
+
+## 发布物
+
+| 类别 | 版本 | 文件 |
+|------|------|------|
+| Web 上位机 | v1.0 | `release/电机上位机-v1.0.html`（离线单文件） |
+| 主固件 | v1.1.0 | `release/motor_driver_ctrl-v1.1.0.bin` / `.hex` / `.elf` |
+| Bootloader | v1.0 | `release/bootloader-v1.0.bin` / `.elf` |
+| 技术手册 | v1.0 | `docs/technical-manual.md` |
+
+## 目录结构
 
 ```
 motor_driver_control/
-鈹溾攢鈹€ index.html              # 鍙戝竷椤碉紙涓嬭浇涓績 + 缃戠珯鍏ュ彛锛?鈹溾攢鈹€ web/index.html          # 鍦ㄧ嚎涓婁綅鏈猴紙鍗曟枃浠讹紝鑷寘鍚級
-鈹斺攢鈹€ release/                # 鍙戝竷鐗╋紙涓婁綅鏈?/ 鍥轰欢 / BL锛?```
+├── index.html              # 发布页（下载中心 + 网站入口）
+├── web/index.html          # 在线上位机（单文件，自包含）
+├── release/                # 发布物（上位机 / 固件 / BL）
+└── docs/                   # 技术手册（v1.0）
+```
 
-## 鏇存柊鍙戝竷鐗?
-灏嗘柊鏋勫缓鐨勫彂甯冪墿鏀惧叆 `release/`锛屾洿鏂?`index.html` 涓増鏈彿鍚庢彁浜ゆ帹閫佸嵆鍙€?
+## 更新发布物
+
+将新构建的发布物放入 `release/`，更新 `index.html` 中版本号后提交推送即可。

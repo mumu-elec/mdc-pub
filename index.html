@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Motor Driver Controller 鈥?鍥涜矾鐩存祦鐢垫満椹卞姩鍣?/title>
+<title>Motor Driver Controller — 四路直流电机驱动器</title>
 <style>
 :root{--bg:#0a0e18;--panel:#111827;--panel2:#0d1321;--text:#c5c9d4;--border:#1f2937;--accent:#4b8ce8;--green:#3a9a56;--red:#d94444;--muted:#6b7280}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -16,7 +16,7 @@ h1{font-size:30px;color:#fff;letter-spacing:1px}
 section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:22px 24px;margin-bottom:20px}
 h2{font-size:18px;color:#fff;margin-bottom:14px;display:flex;align-items:center;gap:10px}
 h2 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.dot.host{background:var(--green)}.dot.fw{background:var(--accent)}.dot.bl{background:var(--red)}
+.dot.host{background:var(--green)}.dot.fw{background:var(--accent)}.dot.bl{background:var(--red)}.dot.doc{background:#a78bfa}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
 th{color:var(--muted);font-weight:normal;font-size:13px}
@@ -38,53 +38,61 @@ code{background:var(--panel2);border:1px solid var(--border);padding:1px 6px;bor
 <body>
 <div class="wrap">
 <header>
-  <h1>鈿?Motor Driver Controller</h1>
-  <span class="tag">STM32F401 + TB6612 路 鍥涜矾鐩存祦鐢垫満椹卞姩鍣?/span>
-  <div class="sub">Bootloader + 涓诲浐浠?+ Web 涓婁綅鏈?路 SBUS / 鏂囨湰鎸囦护 / 浜岃繘鍒跺抚 涓夊崗璁敮鎸?/div>
+  <h1>⚡ Motor Driver Controller</h1>
+  <span class="tag">STM32F401 + TB6612 · 四路直流电机驱动器</span>
+  <div class="sub">Bootloader + 主固件 + Web 上位机 · SBUS / ELRS / 文本指令 / 二进制帧 多协议支持</div>
 </header>
 
 <section>
-  <h2><span class="dot host"></span>Web 涓婁綅鏈?<span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
-  <p style="color:var(--muted);margin-bottom:14px">鍩轰簬 Web Serial API 鐨勫湪绾挎帶鍒跺彴锛氱數鏈鸿皟閫?/ 缂栫爜鍣ㄥ弽棣?/ PID 璋冨弬 / 瀹炴椂鏇茬嚎锛屾棤闇€瀹夎锛屾祻瑙堝櫒鐩磋繛涓插彛銆?/p>
-  <a class="btn" href="web/">馃殌 鍦ㄧ嚎浣跨敤涓婁綅鏈?/a>
-  <a class="btn ghost" href="release/鐢垫満涓婁綅鏈?v1.0.html" download>猬?涓嬭浇绂荤嚎鍗曟枃浠剁増</a>
-  <p class="warn">鈿?鍦ㄧ嚎浣跨敤闇€瑕?Chrome / Edge 娴忚鍣紙Web Serial API锛夛紝骞堕渶 USB 杞覆鍙ｇ‖浠躲€?/p>
+  <h2><span class="dot host"></span>Web 上位机 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
+  <p style="color:var(--muted);margin-bottom:14px">基于 Web Serial API 的在线控制台：电机调试 / 编码器反馈 / PID 调参 / 实时曲线 / OTA 固件升级，无需安装，浏览器直连串口。</p>
+  <a class="btn" href="web/">🚀 在线使用上位机</a>
+  <a class="btn ghost" href="release/电机上位机-v1.0.html" download>⬇ 下载离线单文件版</a>
+  <p class="warn">⚠ 在线使用需要 Chrome / Edge 浏览器（Web Serial API），并需 USB 转串口硬件。</p>
 </section>
 
 <section>
-  <h2><span class="dot fw"></span>鍥轰欢鍙戝竷 <span style="font-size:13px;color:var(--muted)">v1.1.0</span></h2>
+  <h2><span class="dot fw"></span>固件发布 <span style="font-size:13px;color:var(--muted)">v1.1.0</span></h2>
   <table>
-    <tr><th>鏂囦欢</th><th>璇存槑</th><th>涓嬭浇</th></tr>
-    <tr><td><code>motor_driver_ctrl-v1.1.0.bin</code></td><td>涓诲浐浠朵簩杩涘埗锛堢儳褰曞埌搴旂敤鍖猴紝寤鸿缁?Bootloader 鍗囩骇锛?/td><td><a href="release/motor_driver_ctrl-v1.1.0.bin" download>涓嬭浇</a></td></tr>
-    <tr><td><code>motor_driver_ctrl-v1.1.0.hex</code></td><td>涓诲浐浠?HEX锛堝惈鍦板潃淇℃伅锛屽彲鐢?ST-LINK 鐩存帴鐑у綍锛?/td><td><a href="release/motor_driver_ctrl-v1.1.0.hex" download>涓嬭浇</a></td></tr>
-    <tr><td><code>motor_driver_ctrl-v1.1.0.elf</code></td><td>涓诲浐浠?ELF锛堝惈璋冭瘯绗﹀彿锛?/td><td><a href="release/motor_driver_ctrl-v1.1.0.elf" download>涓嬭浇</a></td></tr>
+    <tr><th>文件</th><th>说明</th><th>下载</th></tr>
+    <tr><td><code>motor_driver_ctrl-v1.1.0.bin</code></td><td>主固件二进制（烧录到应用区，建议经 Bootloader 升级）</td><td><a href="release/motor_driver_ctrl-v1.1.0.bin" download>下载</a></td></tr>
+    <tr><td><code>motor_driver_ctrl-v1.1.0.hex</code></td><td>主固件 HEX（含地址信息，可用 ST-LINK 直接烧录）</td><td><a href="release/motor_driver_ctrl-v1.1.0.hex" download>下载</a></td></tr>
+    <tr><td><code>motor_driver_ctrl-v1.1.0.elf</code></td><td>主固件 ELF（含调试符号）</td><td><a href="release/motor_driver_ctrl-v1.1.0.elf" download>下载</a></td></tr>
   </table>
 </section>
 
 <section>
-  <h2><span class="dot bl"></span>Bootloader 鍙戝竷 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
+  <h2><span class="dot bl"></span>Bootloader 发布 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
   <table>
-    <tr><th>鏂囦欢</th><th>璇存槑</th><th>涓嬭浇</th></tr>
-    <tr><td><code>bootloader-v1.0.bin</code></td><td>Bootloader 浜岃繘鍒讹紙棣栧埛鏃剁粡 ST-LINK 鐑у綍锛屼箣鍚庤礋璐ｄ覆鍙ｅ崌绾э級</td><td><a href="release/bootloader-v1.0.bin" download>涓嬭浇</a></td></tr>
-    <tr><td><code>bootloader-v1.0.elf</code></td><td>Bootloader ELF锛堝惈璋冭瘯绗﹀彿锛?/td><td><a href="release/bootloader-v1.0.elf" download>涓嬭浇</a></td></tr>
+    <tr><th>文件</th><th>说明</th><th>下载</th></tr>
+    <tr><td><code>bootloader-v1.0.bin</code></td><td>Bootloader 二进制（首刷时经 ST-LINK 烧录，之后负责串口升级）</td><td><a href="release/bootloader-v1.0.bin" download>下载</a></td></tr>
+    <tr><td><code>bootloader-v1.0.elf</code></td><td>Bootloader ELF（含调试符号）</td><td><a href="release/bootloader-v1.0.elf" download>下载</a></td></tr>
   </table>
 </section>
 
 <section>
-  <h2><span class="dot" style="background:var(--muted)"></span>鐑у綍涓庝娇鐢ㄨ鏄?/h2>
+  <h2><span class="dot doc"></span>技术手册 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
+  <p style="color:var(--muted);margin-bottom:14px">硬件规格、接口定义、通信协议、OTA 升级、故障排查等完整说明。</p>
+  <a class="btn" href="docs/technical-manual.md" download>📄 下载技术手册 (Markdown)</a>
+</section>
+
+<section>
+  <h2><span class="dot" style="background:var(--muted)"></span>烧录与使用说明</h2>
   <ol>
-    <li>棣栨鐑у綍锛氱敤 ST-LINK 鍏堢儳 <code>bootloader-v1.0.bin</code>锛屽啀鐑?<code>motor_driver_ctrl-v1.1.0.bin</code> 鍒板簲鐢ㄥ尯銆?/li>
-    <li>鍚庣画鍗囩骇锛氬彲閫氳繃涓婁綅鏈虹殑涓插彛鍗囩骇鍔熻兘缁?Bootloader 鍐欏叆鏂板浐浠躲€?/li>
-    <li>杩炴帴锛歎SB 杞覆鍙ｆ帴 UART锛屾墦寮€涓婃柟 <b>鍦ㄧ嚎涓婁綅鏈?/b>锛岄€夋嫨涓插彛骞惰繛鎺ャ€?/li>
-    <li>鍗忚鐗堟湰锛氫笂浣嶆満 <code>HOST_MAJOR=1</code> 涓庡浐浠?<code>SW_MAJOR=1</code> 鍖归厤锛堜笉鍖归厤鏃朵笂浣嶆満浼氭樉绀?鉂?鍗忚涓嶅吋瀹癸級銆?/li>
+    <li>首次烧录：用 ST-LINK 先烧 <code>bootloader-v1.0.bin</code>，再烧 <code>motor_driver_ctrl-v1.1.0.bin</code> 到应用区。</li>
+    <li>后续升级：可通过上位机的串口升级功能经 Bootloader 写入新固件。</li>
+    <li>连接：USB 转串口接 UART，打开上方 <b>在线上位机</b>，选择串口并连接。</li>
+    <li>协议版本：上位机 <code>HOST_MAJOR=1</code> 与固件 <code>SW_MAJOR=1</code> 匹配（不匹配时上位机会显示 ❌ 协议不兼容）。</li>
   </ol>
   <div class="note" style="margin-top:14px">
-    <b>纭欢锛?/b>STM32F401 + TB6612 脳2锛堝洓璺數鏈猴級路 缂栫爜鍣ㄨ緭鍏?路 SBUS 鍙嶇浉锛堜笁寮傛垨闂級路 I2C EEPROM 閰嶇疆瀛樺偍 路 LED 鐘舵€佹寚绀?  </div>
+    <b>硬件：</b>STM32F401 + TB6612 ×2（四路电机）· 编码器输入 · SBUS 反相（三异或门）· I2C EEPROM 配置存储 · LED 状态指示
+  </div>
 </section>
 
 <footer>
-  Motor Driver Controller 路 涓婁綅鏈?v1.0 (D=1,F=0) 路 鍥轰欢 v1.1.0 (A=1,D=1,E=0) 路 BL v1.0<br>
-  婧愮爜浠撳簱涓虹鏈夛紝鏈〉闈粎鎻愪緵鍙戝竷鐗╀笅杞戒笌鍦ㄧ嚎涓婁綅鏈烘湇鍔?</footer>
+  Motor Driver Controller · 上位机 v1.0 (D=1,F=0) · 固件 v1.1.0 (A=1,D=1,E=0) · BL v1.0 · 手册 v1.0<br>
+  源码仓库为私有，本页面仅提供发布物下载与在线上位机服务
+</footer>
 </div>
 </body>
 </html>
