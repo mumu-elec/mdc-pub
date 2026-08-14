@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  motor_driver.launch — ROS1 (Noetic) 驱动节点 launch
+  用法:
+    roslaunch ros1_motor_driver motor_driver.launch
+    roslaunch ros1_motor_driver motor_driver.launch port:=/dev/ttyUSB1 \
+        status_interval_ms:=20
+-->
+<launch>
+  <arg name="port" default="/dev/ttyUSB0" />
+  <arg name="status_interval_ms" default="50" />
+
+  <node name="motor_driver" pkg="ros1_motor_driver" type="motor_driver_node" output="screen">
+    <param name="port" value="$(arg port)" />
+    <param name="baud" value="2000000" />               <!-- 固件 USB 口固定波特率 -->
+    <param name="status_interval_ms" value="$(arg status_interval_ms)" />
+    <param name="send_priority_cmd" value="true" />     <!-- 启动时发送 /priority 1 -->
+  </node>
+</launch>

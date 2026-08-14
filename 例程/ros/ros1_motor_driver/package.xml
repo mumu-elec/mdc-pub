@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>ros1_motor_driver</name>
+  <version>1.0.0</version>
+  <description>
+    Motor Driver Controller（STM32F401 + TB6612 四路带编码器直流电机驱动器）的 ROS1 (Noetic) 驱动包。
+    通过 USB 虚拟串口（CH340N，固定 2000000-8N1）与固件通信：
+    文本指令（/priority 1 等）+ 二进制帧（0xAA+CMD+LEN+DATA+CRC8），
+    功能与 ROS2 版 ros2_motor_driver 对齐：/motor_cmd 控制话题、/motor_status 状态话题、
+    get/set/save_config 三个服务。
+  </description>
+  <maintainer email="dev@example.com">Motor Driver Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>message_generation</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>std_msgs</build_depend>
+
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+</package>

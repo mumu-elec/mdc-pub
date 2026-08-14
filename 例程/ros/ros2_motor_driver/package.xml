@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ros2_motor_driver</name>
+  <version>1.0.0</version>
+  <description>
+    Motor Driver Controller（STM32F401 + TB6612 四路带编码器直流电机驱动器）的 ROS2 (Humble) 驱动包。
+    通过 USB 虚拟串口（CH340N，固定 2000000-8N1）与固件通信：
+    文本指令（/priority 1 等）+ 二进制帧（0xAA+CMD+LEN+DATA+CRC8），
+    提供 /motor_cmd 控制话题、/motor_status 状态话题与 get/set/save_config 服务。
+  </description>
+  <maintainer email="dev@example.com">Motor Driver Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
