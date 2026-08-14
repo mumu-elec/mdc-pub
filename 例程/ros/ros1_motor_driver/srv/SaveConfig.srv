@@ -1,0 +1,3 @@
+# 空请求：将 RAM 配置写入 EEPROM（对应固件 SAVE_EEPROM 0x20，约 190ms）
+---
+bool success

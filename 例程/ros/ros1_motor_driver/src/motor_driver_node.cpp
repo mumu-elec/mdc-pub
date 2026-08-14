@@ -1,0 +1,601 @@
+// =====================================================================
+// motor_driver_node.cpp — ROS1 (Noetic) 驱动节点
+//
+// 硬件: Motor Driver Controller (STM32F401 + TB6612, 四路带编码器直流电机)
+// 协议: 例程/common/协议规范.md (布局 v2.1, config_t = 231B)
+//   - 文本指令 : /priority 1\n  启动时发送, 使 USB 成为控制主控
+//   - 二进制帧 : 0xAA + CMD + LEN + DATA + CRC8
+//                CRC8 多项式 0x07, 初值 0, 计算范围 = CMD+LEN+DATA (不含 SYNC)
+//   - 状态帧   : 0xF0 STATUS_REPORT (常规 56B / 扩展 72B, 全部小端 LE)
+//   - 控制帧   : 0x31 MOTOR_CTRL [m1~m4: 4×int32 LE]
+//   - 配置帧   : 0x10 READ_PARAM / 0x11 WRITE_PARAM / 0x20 SAVE_EEPROM
+//   - 订阅帧   : 0x40 SUBSCRIBE / 0x41 UNSUBSCRIBE
+//
+// 串口: USB 虚拟串口 (CH340N), 固定 2000000-8N1, Linux termios 直接操作,
+//       不依赖第三方串口库; 读操作使用 select 超时。
+// 功能与 ROS2 版 (ros2_motor_driver) 完全对齐。
+// =====================================================================
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include "ros/ros.h"
+#include "std_msgs/Header.h"
+
+#include "ros1_motor_driver/MotorCmd.h"
+#include "ros1_motor_driver/MotorStatus.h"
+#include "ros1_motor_driver/GetConfig.h"
+#include "ros1_motor_driver/SetConfig.h"
+#include "ros1_motor_driver/SaveConfig.h"
+
+using namespace std::chrono_literals;
+
+// ---------------- CRC8 (协议规范 §3.1: 多项式 0x07, 初值 0) ----------------
+static uint8_t crc8(const uint8_t* d, size_t len)
+{
+    uint8_t c = 0;
+    for (size_t i = 0; i < len; i++) {
+        c ^= d[i];
+        for (int b = 0; b < 8; b++) {
+            c = (c & 0x80) ? (uint8_t)((c << 1) ^ 0x07) : (uint8_t)(c << 1);
+        }
+    }
+    return c;
+}
+
+// ---------------- 小端 (LE) 读写辅助 ----------------
+static uint16_t get_le16(const uint8_t* p)
+{
+    return (uint16_t)(p[0] | (uint16_t)(p[1] << 8));
+}
+
+static uint32_t get_le32(const uint8_t* p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static float get_le32f(const uint8_t* p)
+{
+    uint32_t u = get_le32(p);
+    float f;
+    memcpy(&f, &u, sizeof(f));
+    return f;
+}
+
+static void put_le16(std::vector<uint8_t>& v, uint16_t x)
+{
+    v.push_back((uint8_t)(x & 0xFF));
+    v.push_back((uint8_t)((x >> 8) & 0xFF));
+}
+
+static void put_le32(std::vector<uint8_t>& v, uint32_t x)
+{
+    v.push_back((uint8_t)(x & 0xFF));
+    v.push_back((uint8_t)((x >> 8) & 0xFF));
+    v.push_back((uint8_t)((x >> 16) & 0xFF));
+    v.push_back((uint8_t)((x >> 24) & 0xFF));
+}
+
+// 组帧: frame = [0xAA, cmd, len, data..., crc8(cmd+len+data)]
+static std::vector<uint8_t> build_frame(uint8_t cmd, const std::vector<uint8_t>& data)
+{
+    std::vector<uint8_t> f;
+    f.reserve(4 + data.size());
+    f.push_back(0xAA);
+    f.push_back(cmd);
+    f.push_back((uint8_t)data.size());
+    f.insert(f.end(), data.begin(), data.end());
+    f.push_back(crc8(f.data() + 1, f.size() - 1));  // CRC 范围 = CMD+LEN+DATA（f.size() 此时 = 3+len，-1 = 2+len）
+    return f;
+}
+
+// ---------------- 串口类 (Linux termios, 零第三方依赖) ----------------
+class SerialPort
+{
+public:
+    SerialPort() = default;
+    ~SerialPort() { close(); }
+
+    // 打开串口并配置为 8N1 原始模式
+    bool open(const std::string& port, int baud)
+    {
+        fd_ = ::open(port.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (fd_ < 0) return false;
+        int fl = fcntl(fd_, F_GETFL, 0);
+        if (fl >= 0) fcntl(fd_, F_SETFL, fl & ~O_NONBLOCK);
+
+        struct termios tio;
+        memset(&tio, 0, sizeof(tio));
+        if (tcgetattr(fd_, &tio) != 0) { close(); return false; }
+        cfmakeraw(&tio);                // 原始模式: 8N1, 无回显, 无行缓冲/信号处理
+        tio.c_cflag |= (CLOCAL | CREAD);
+        tio.c_cflag &= ~CRTSCTS;        // 无硬件流控
+        tio.c_cc[VMIN]  = 0;            // 配合 select 实现超时读
+        tio.c_cc[VTIME] = 0;
+        speed_t sp = baud_to_speed(baud);
+        if (cfsetispeed(&tio, sp) != 0 || cfsetospeed(&tio, sp) != 0) {
+            close(); return false;
+        }
+        if (tcsetattr(fd_, TCSANOW, &tio) != 0) { close(); return false; }
+        tcflush(fd_, TCIOFLUSH);        // 清空收发缓冲, 丢弃上电残留数据
+        return true;
+    }
+
+    void close()
+    {
+        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+    }
+
+    bool is_open() const { return fd_ >= 0; }
+
+    // 带超时读: 返回 >0 读取字节数 / 0 超时 / -1 错误
+    ssize_t read(uint8_t* buf, size_t max_len, int timeout_ms)
+    {
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(fd_, &rfds);
+        struct timeval tv;
+        tv.tv_sec  = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        int r = select(fd_ + 1, &rfds, nullptr, nullptr, &tv);
+        if (r <= 0) return r;           // 0=超时, -1=select 错误
+        ssize_t n = ::read(fd_, buf, max_len);
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) return 0;
+        return n;
+    }
+
+    // 循环写直到写完
+    ssize_t write(const uint8_t* data, size_t len)
+    {
+        size_t off = 0;
+        while (off < len) {
+            ssize_t n = ::write(fd_, data + off, len - off);
+            if (n < 0) {
+                if (errno == EINTR) continue;
+                return -1;
+            }
+            off += (size_t)n;
+        }
+        return (ssize_t)off;
+    }
+
+private:
+    static speed_t baud_to_speed(int baud)
+    {
+        switch (baud) {
+            case 9600:    return B9600;
+            case 19200:   return B19200;
+            case 38400:   return B38400;
+            case 57600:   return B57600;
+            case 115200:  return B115200;
+            case 230400:  return B230400;
+            case 460800:  return B460800;
+            case 500000:  return B500000;
+            case 921600:  return B921600;
+            case 1000000: return B1000000;
+            case 1152000: return B1152000;
+            case 1500000: return B1500000;
+            case 2000000: return B2000000;  // 固件 USB 口固定 2000000-8N1 (默认)
+            case 2500000: return B2500000;
+            case 3000000: return B3000000;
+            case 3500000: return B3500000;
+            case 4000000: return B4000000;
+            default:      return B2000000;
+        }
+    }
+
+    int fd_ = -1;
+};
+
+// ---------------- 驱动节点 ----------------
+class MotorDriverNode
+{
+public:
+    // 命令应答类型
+    enum ReplyKind {
+        REPLY_NONE   = 0,
+        REPLY_ACK_OK,     // ACK err=0x00
+        REPLY_ACK_FAIL,   // ACK err=0xFF
+        REPLY_DATA,       // 数据应答 (如 0x10 → 231B config_t)
+    };
+
+    MotorDriverNode()
+    {
+        ros::NodeHandle nh;
+        ros::NodeHandle pnh("~");
+
+        // ---- 参数 ----
+        pnh.param<std::string>("port", port_, "/dev/ttyUSB0");
+        pnh.param<int>("baud", baud_, 2000000);
+        pnh.param<int>("status_interval_ms", status_interval_ms_, 50);
+        pnh.param<bool>("send_priority_cmd", send_priority_cmd_, true);
+        if (status_interval_ms_ < 20) {
+            ROS_WARN("status_interval_ms 小于固件下限 20ms, 已钳位为 20");
+            status_interval_ms_ = 20;
+        }
+
+        // ---- 话题 / 服务 ----
+        status_pub_ = nh.advertise<ros1_motor_driver::MotorStatus>("motor_status", 10);
+        cmd_sub_ = nh.subscribe("motor_cmd", 10, &MotorDriverNode::motor_cmd_cb, this);
+        get_config_srv_ = nh.advertiseService("get_config", &MotorDriverNode::get_config_cb, this);
+        set_config_srv_ = nh.advertiseService("set_config", &MotorDriverNode::set_config_cb, this);
+        save_config_srv_ = nh.advertiseService("save_config", &MotorDriverNode::save_config_cb, this);
+
+        // ---- 串口 ----
+        if (!serial_.open(port_, baud_)) {
+            ROS_FATAL("无法打开串口 %s (baud=%d), 请检查设备节点与 dialout 权限",
+                      port_.c_str(), baud_);
+            ok_ = false;
+            return;
+        }
+        ROS_INFO("串口 %s 已打开 (baud=%d, 8N1)", port_.c_str(), baud_);
+
+        // ---- 后台接收线程 ----
+        recv_thread_ = std::thread(&MotorDriverNode::receive_loop, this);
+
+        // ---- 启动序列: /priority 1 → SUBSCRIBE ----
+        startup();
+    }
+
+    ~MotorDriverNode() { shutdown_driver(); }
+
+    bool is_ok() const { return ok_; }
+
+    // 关闭: UNSUBSCRIBE + 发全零控制帧, 停止线程, 关闭串口 (幂等)
+    void shutdown_driver()
+    {
+        std::lock_guard<std::mutex> lk(shutdown_mtx_);
+        if (shutdown_done_) return;
+        shutdown_done_ = true;
+
+        if (serial_.is_open()) {
+            write_frame(0x41, {});               // UNSUBSCRIBE (关闭状态上报)
+            std::this_thread::sleep_for(50ms);
+            std::vector<uint8_t> zero(16, 0);    // 全零 MOTOR_CTRL (四通道停车)
+            write_frame(0x31, zero);
+            ROS_INFO("已发送 UNSUBSCRIBE(0x41) 与全零 MOTOR_CTRL(0x31)");
+        }
+
+        stop_ = true;
+        if (recv_thread_.joinable()) recv_thread_.join();
+        serial_.close();
+        ROS_INFO("驱动节点已关闭, 串口已释放");
+    }
+
+private:
+    // ================= 启动序列 =================
+    void startup()
+    {
+        // 1) 文本指令 /priority 1 (USB 主控), 等待回显
+        if (send_priority_cmd_) {
+            {
+                std::lock_guard<std::mutex> lk(text_mtx_);
+                text_rx_.clear();
+            }
+            const std::string text = "/priority 1";
+            write_bytes((const uint8_t*)(text + "\n").c_str(), text.size() + 1);
+            ROS_INFO("已发送文本指令: %s (等待回显...)", text.c_str());
+
+            std::unique_lock<std::mutex> lk(text_mtx_);
+            bool echoed = text_cv_.wait_for(lk, 2s, [this] {
+                return text_rx_.find('\n') != std::string::npos;
+            });
+            std::string echo = text_rx_;
+            lk.unlock();
+            if (echoed) {
+                size_t pos = echo.find('\n');
+                std::string line = (pos == std::string::npos) ? echo : echo.substr(0, pos);
+                ROS_INFO("/priority 1 回显: \"%s\" (USB 主控已就绪)", line.c_str());
+            } else {
+                ROS_WARN("2s 内未收到 /priority 1 回显, 请检查固件/接线; 已收到: \"%s\"",
+                         echo.c_str());
+            }
+        } else {
+            ROS_WARN("send_priority_cmd=false, 跳过 /priority 1; "
+                     "若 USB 非主控, 控制帧 0x31 将被固件仲裁拒绝");
+        }
+
+        // 2) SUBSCRIBE (0x40, interval LE16)
+        std::vector<uint8_t> d;
+        put_le16(d, (uint16_t)status_interval_ms_);
+        int r = send_cmd_wait_reply(0x40, d, 1000, nullptr);
+        if (r == REPLY_ACK_OK) {
+            ROS_INFO("SUBSCRIBE(0x40) 成功: 状态上报间隔 %d ms", status_interval_ms_);
+        } else {
+            ROS_ERROR("SUBSCRIBE(0x40) 失败/超时 (r=%d), 将收不到 /motor_status", r);
+        }
+    }
+
+    // ================= 后台接收线程 =================
+    void receive_loop()
+    {
+        uint8_t buf[512];
+        while (!stop_ && ros::ok()) {
+            if (!serial_.is_open()) break;
+            ssize_t n = serial_.read(buf, sizeof(buf), 100);  // select 100ms 超时
+            if (n > 0) {
+                on_rx(buf, (size_t)n);
+            } else if (n < 0) {
+                ROS_ERROR("串口读错误");
+            }
+        }
+        ROS_INFO("接收线程退出");
+    }
+
+    // 收到原始字节: ① 存入文本回显缓冲 ② 滑动窗口解析二进制帧
+    void on_rx(const uint8_t* d, size_t n)
+    {
+        {   // 文本回显缓冲 (供 /priority 1 回显等待, 仅启动阶段使用)
+            std::lock_guard<std::mutex> lk(text_mtx_);
+            text_rx_.append((const char*)d, n);
+            if (text_rx_.size() > 4096) text_rx_.erase(0, text_rx_.size() - 4096);
+        }
+        text_cv_.notify_all();
+
+        rx_buf_.insert(rx_buf_.end(), d, d + n);
+        parse_frames();
+    }
+
+    // 滑动窗口找 0xAA, 校验 CRC8, 分发完整帧
+    void parse_frames()
+    {
+        while (true) {
+            // 定位 SYNC (0xAA)
+            auto it = std::find(rx_buf_.begin(), rx_buf_.end(), 0xAA);
+            if (it != rx_buf_.begin()) {
+                if (it == rx_buf_.end()) { rx_buf_.clear(); return; }
+                rx_buf_.erase(rx_buf_.begin(), it);   // 丢弃 SYNC 前的噪声字节
+            }
+            if (rx_buf_.size() < 4) return;           // 连最小帧(AA CMD LEN CRC)都不完整
+            size_t len = rx_buf_[2];
+            if (len > 250) {                          // LEN 越界 (规范上限 250): 丢弃该字节重扫
+                rx_buf_.erase(rx_buf_.begin());
+                continue;
+            }
+            size_t total = 4 + len;                   // AA CMD LEN [DATA] CRC
+            if (rx_buf_.size() < total) return;       // 等待完整帧
+            uint8_t c = crc8(&rx_buf_[1], total - 2); // CRC 范围 = CMD+LEN+DATA
+            if (c == rx_buf_[total - 1]) {
+                handle_frame(rx_buf_[1], &rx_buf_[3], len);
+                rx_buf_.erase(rx_buf_.begin(), rx_buf_.begin() + total);
+            } else {
+                // CRC 校验失败: 窗口前进 1 字节重新找 0xAA
+                rx_buf_.erase(rx_buf_.begin());
+            }
+        }
+    }
+
+    // ================= 帧分发 =================
+    void handle_frame(uint8_t cmd, const uint8_t* d, size_t len)
+    {
+        if (cmd == 0xF0) {                    // STATUS_REPORT: 主动推送
+            handle_status(d, len);
+        } else if (cmd == 0xF1 || cmd == 0xF2) {  // DETECT_REPORT / SBUS_DATA: 未启用, 忽略
+            ROS_DEBUG("忽略主动上报帧 CMD=0x%02X LEN=%zu", cmd, len);
+        } else if (len == 1) {                // ACK 帧: 0xAA CMD 0x01 err CRC
+            handle_ack(cmd, d[0]);
+        } else if (cmd == 0x10 && len == 231) {   // READ_PARAM 应答: config_t 231B
+            handle_data_reply(d, len);
+        } else {
+            ROS_WARN("未识别帧 CMD=0x%02X LEN=%zu", cmd, len);
+        }
+    }
+
+    // 0xF0 STATUS_REPORT: 常规 56B / 扩展 72B (rpm_raw 追加在 rpm 之后)
+    void handle_status(const uint8_t* d, size_t len)
+    {
+        if (len != 56 && len != 72) {
+            ROS_WARN("STATUS_REPORT 长度异常 %zu (期望 56/72)", len);
+            return;
+        }
+        ros1_motor_driver::MotorStatus msg;
+        msg.header.stamp = ros::Time::now();
+        msg.header.frame_id = "motor_driver";
+        for (int i = 0; i < 4; i++) {
+            msg.enc[i] = (int32_t)get_le32(d + 4 * i);           // 编码器累计脉冲
+            msg.tgt[i] = get_le32f(d + 16 + 4 * i);              // 当前目标值 (float LE)
+            msg.rpm[i] = (int32_t)get_le32(d + 32 + 4 * i);      // 滤波后转速
+        }
+        msg.sbus_frame_cnt = get_le32(d + 48);
+        msg.sbus_ok_cnt    = get_le32(d + 52);
+        status_pub_.publish(msg);
+    }
+
+    // ACK 帧: 完成正在等待的命令 (条件变量通知)
+    void handle_ack(uint8_t cmd, uint8_t err)
+    {
+        {
+            std::lock_guard<std::mutex> lk(cmd_mtx_);
+            if (cmd == pending_cmd_) {
+                reply_kind_ = (err == 0x00) ? REPLY_ACK_OK : REPLY_ACK_FAIL;
+                reply_received_ = true;
+            } else {
+                ROS_DEBUG("收到未等待的 ACK: CMD=0x%02X err=0x%02X", cmd, err);
+            }
+        }
+        ack_cv_.notify_all();
+    }
+
+    // 数据应答 (如 0x10 → 231B)
+    void handle_data_reply(const uint8_t* d, size_t len)
+    {
+        {
+            std::lock_guard<std::mutex> lk(cmd_mtx_);
+            if (pending_cmd_ == 0x10) {
+                reply_data_.assign(d, d + len);
+                reply_kind_ = REPLY_DATA;
+                reply_received_ = true;
+            }
+        }
+        ack_cv_.notify_all();
+    }
+
+    // ================= 发送 =================
+    bool write_bytes(const uint8_t* d, size_t n)
+    {
+        std::lock_guard<std::mutex> lk(write_mtx_);
+        return serial_.write(d, n) == (ssize_t)n;
+    }
+
+    bool write_frame(uint8_t cmd, const std::vector<uint8_t>& data)
+    {
+        auto f = build_frame(cmd, data);
+        return write_bytes(f.data(), f.size());
+    }
+
+    // 发送命令并等待应答 (ACK 或数据帧), 串口命令串行化 (一次一个在途命令)
+    // 返回: REPLY_ACK_OK / REPLY_ACK_FAIL / REPLY_DATA / -1 (超时或 IO 错误)
+    int send_cmd_wait_reply(uint8_t cmd, const std::vector<uint8_t>& data,
+                            int timeout_ms, std::vector<uint8_t>* out)
+    {
+        if (!serial_.is_open()) return -1;
+        {
+            std::lock_guard<std::mutex> lk(cmd_mtx_);
+            pending_cmd_ = cmd;
+            reply_received_ = false;
+            reply_kind_ = REPLY_NONE;
+            reply_data_.clear();
+        }
+        if (!write_frame(cmd, data)) {
+            std::lock_guard<std::mutex> lk(cmd_mtx_);
+            pending_cmd_ = 0;
+            return -1;
+        }
+        std::unique_lock<std::mutex> lk(cmd_mtx_);
+        bool got = ack_cv_.wait_for(lk, std::chrono::milliseconds(timeout_ms),
+                                    [this] { return reply_received_; });
+        int kind = got ? reply_kind_ : -1;
+        if (out && kind == REPLY_DATA) *out = reply_data_;
+        pending_cmd_ = 0;
+        return kind;
+    }
+
+    // ================= /motor_cmd 订阅回调 =================
+    void motor_cmd_cb(const ros1_motor_driver::MotorCmd::ConstPtr& msg)
+    {
+        // 30Hz 限流: 高于 30Hz 的发布被跳过, 只发送最新值 (固件按 /timeout 超时保护)
+        auto now_t = std::chrono::steady_clock::now();
+        if (now_t - last_ctrl_send_ < 33ms) {
+            if (!throttle_warned_) {
+                ROS_WARN("/motor_cmd 发布频率超过 30Hz 已限流, 建议 10~30Hz");
+                throttle_warned_ = true;
+            }
+            return;
+        }
+        throttle_warned_ = false;
+        last_ctrl_send_ = now_t;
+
+        std::vector<uint8_t> d;
+        for (int i = 0; i < 4; i++) {
+            put_le32(d, (uint32_t)msg->target[i]);   // int32 LE
+        }
+        if (!write_frame(0x31, d)) {                 // MOTOR_CTRL (核心控制帧)
+            ROS_ERROR("串口写 0x31 失败");
+        }
+    }
+
+    // ================= 服务回调 =================
+    bool get_config_cb(ros1_motor_driver::GetConfig::Request& /*req*/,
+                       ros1_motor_driver::GetConfig::Response& resp)
+    {
+        std::vector<uint8_t> out;
+        int r = send_cmd_wait_reply(0x10, {}, 1500, &out);   // READ_PARAM
+        if (r == REPLY_DATA && out.size() == 231) {
+            for (size_t i = 0; i < 231; i++) resp.config[i] = out[i];
+            ROS_INFO("READ_PARAM(0x10) 成功: 读取 config_t 231B");
+        } else {
+            ROS_ERROR("READ_PARAM(0x10) 失败/超时 (r=%d, len=%zu)", r, out.size());
+        }
+        return true;
+    }
+
+    bool set_config_cb(ros1_motor_driver::SetConfig::Request& req,
+                       ros1_motor_driver::SetConfig::Response& resp)
+    {
+        std::vector<uint8_t> d(req.config.begin(), req.config.end());
+        int r = send_cmd_wait_reply(0x11, d, 2000, nullptr);  // WRITE_PARAM
+        resp.success = (r == REPLY_ACK_OK);
+        ROS_INFO("WRITE_PARAM(0x11) %s",
+                 resp.success ? "成功 (仅 RAM, 需 /save 持久化)" : "失败/超时");
+        return true;
+    }
+
+    bool save_config_cb(ros1_motor_driver::SaveConfig::Request& /*req*/,
+                        ros1_motor_driver::SaveConfig::Response& resp)
+    {
+        int r = send_cmd_wait_reply(0x20, {}, 3000, nullptr); // SAVE_EEPROM
+        resp.success = (r == REPLY_ACK_OK);
+        ROS_INFO("SAVE_EEPROM(0x20) %s (固件写入约 190ms)",
+                 resp.success ? "成功" : "失败/超时");
+        return true;
+    }
+
+    // ================= 成员 =================
+    // 参数
+    std::string port_;
+    int baud_ = 2000000;
+    int status_interval_ms_ = 50;
+    bool send_priority_cmd_ = true;
+    bool ok_ = false;
+
+    // ROS 句柄
+    ros::Publisher status_pub_;
+    ros::Subscriber cmd_sub_;
+    ros::ServiceServer get_config_srv_;
+    ros::ServiceServer set_config_srv_;
+    ros::ServiceServer save_config_srv_;
+
+    // 串口 / 线程
+    SerialPort serial_;
+    std::thread recv_thread_;
+    std::atomic<bool> stop_{false};
+    bool shutdown_done_ = false;
+    std::mutex shutdown_mtx_;
+    std::mutex write_mtx_;
+
+    // 命令/应答状态 (一次一个在途命令)
+    std::mutex cmd_mtx_;
+    std::condition_variable ack_cv_;
+    uint8_t pending_cmd_ = 0;
+    bool reply_received_ = false;
+    int reply_kind_ = REPLY_NONE;
+    std::vector<uint8_t> reply_data_;
+
+    // 文本回显缓冲 (启动阶段 /priority 1 回显等待)
+    std::mutex text_mtx_;
+    std::condition_variable text_cv_;
+    std::string text_rx_;
+
+    // 二进制帧解析缓冲
+    std::vector<uint8_t> rx_buf_;
+
+    // 0x31 控制帧限流
+    std::chrono::steady_clock::time_point last_ctrl_send_{};
+    bool throttle_warned_ = false;
+};
+
+// ================= main =================
+int main(int argc, char** argv)
+{
+    ros::init(argc, argv, "motor_driver_node");
+    MotorDriverNode node;
+    if (!node.is_ok()) return 1;
+    ROS_INFO("节点就绪, 开始处理回调 (Ctrl+C 退出)");
+    ros::spin();
+    node.shutdown_driver();   // UNSUBSCRIBE + 全零控制帧
+    return 0;
+}
