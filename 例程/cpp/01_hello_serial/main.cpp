@@ -1,23 +1,25 @@
 // ============================================================================
-// 例程 01: hello_serial —— 最小连通测试
+// 例程 01: hello_serial —— 最小连通测试（基于 mdc_lib）
 //
-// 流程: 打开串口(2000000-8N1) → 发送 "/version\n" → 读取回显(≤2s) 打印
-//       → 发送 "/status\n" → 读取回显打印 → 关闭串口
+// 流程: 打开串口(2000000-8N1) → 用 mdc_lib 构造文本指令发送
+//       → 读取回显(≤2s) 打印 → 关闭串口
 //
 // 用法:
 //   Windows: hello_serial COM3
 //   Linux:   hello_serial /dev/ttyUSB0
 //
-// 依赖: serial_port.h / serial_port.cpp（本目录内自带，零第三方库）
+// 依赖: serial_port.h / serial_port.cpp（串口收发，用户实现）
+//       + mdc_lib.hpp（文本指令打包：mdc::text_version / mdc::text_build）
 // ============================================================================
 
 #include <chrono>
 #include <cstdio>
 #include <string>
 
-#include "serial_port.h"
+#include "mdc_lib.hpp"      // mdc_lib：协议打包（命名空间 mdc）
+#include "serial_port.h"    // 串口收发（用户实现）
 
-// 读取回显：持续读取直到连续 idle_ms 毫秒无新数据，或超过 totalTimeout_ms。
+// 读取回显：持续读取直到连续 idle_ms 毫秒无新数据，或超过 totalTimeoutMs。
 // 用于兼容单行（如 /version）与多行（如 /status）两种回显。
 static std::string readEcho(SerialPort& sp, int totalTimeoutMs = 2000, int idleMs = 150) {
     std::string out;
@@ -66,8 +68,8 @@ int main(int argc, char* argv[]) {
     }
     std::printf("== 已打开 %s @ 2000000-8N1 ==\n", port.c_str());
 
-    // 1) 发送 /version，读取回显（最多 2 秒）
-    const std::string cmdVersion = "/version\n";
+    // 1) 发送 /version（由 mdc::text_version() 打包，含结尾 '\n'），读取回显（最多 2 秒）
+    const std::string cmdVersion = mdc::text_version();
     if (sp.write(cmdVersion) < 0) {
         std::printf("[错误] 发送失败: %s\n", sp.lastError().c_str());
         sp.close();
@@ -76,8 +78,8 @@ int main(int argc, char* argv[]) {
     std::printf(">> %s", cmdVersion.c_str());
     std::printf("<< %s\n", readEcho(sp, 2000).c_str());
 
-    // 2) 发送 /status，读取回显（多行输出，最多 2 秒）
-    const std::string cmdStatus = "/status\n";
+    // 2) 发送 /status（无参数 = 读取全部配置，用 mdc::text_build 构造），读取多行回显
+    const std::string cmdStatus = mdc::text_build("/status", nullptr);
     if (sp.write(cmdStatus) < 0) {
         std::printf("[错误] 发送失败: %s\n", sp.lastError().c_str());
         sp.close();

@@ -1,10 +1,10 @@
 // ============================================================================
-// 例程 04: motor_control —— 实时电机控制
+// 例程 04: motor_control —— 实时电机控制（基于 mdc_lib）
 //
-// - 启动时先发文本指令 "/priority 1"（USB 主控）并读回显确认
-// - 发送线程按 interval-ms 周期连续发送 MOTOR_CTRL(0x31) 帧
-//   （四通道 int32 小端目标值，含义取决于各通道模式：
-//     开环=PWM ±1000 / 速度=RPM / 位置=0.1°）
+// - 启动时先发文本指令 "/priority 1"（USB 主控，mdc::text_build 打包）并读回显确认
+// - 发送线程按 interval-ms 周期连续发送 MOTOR_CTRL(0x31) 帧，
+//   由 mdc::bin_motor_ctrl(t0,t1,t2,t3) 打包（四通道 int32 小端由库处理，
+//   含义取决于各通道模式：开环=PWM ±1000 / 速度=RPM / 位置=0.1°）
 // - 目标值斜坡平滑：当前值每周期向目标逼近最多 ramp 步进
 // - 非阻塞键盘（Windows _kbhit / Linux select）：
 //     '+' 目标 +=100   '-' 目标 -=100   'q' 退出（退出前发送全零安全停转）
@@ -24,7 +24,8 @@
 #include <thread>
 #include <vector>
 
-#include "serial_port.h"
+#include "mdc_lib.hpp"      // mdc_lib：bin_motor_ctrl / text_build / text_mode
+#include "serial_port.h"    // 串口收发（用户实现）
 
 #ifdef _WIN32
 #include <conio.h>          // _kbhit / _getch
@@ -71,47 +72,10 @@ static char stdinGetChar() {
 #endif
 
 // ============================================================================
-// 二进制帧工具（本例程只用到 0x31，直接在 main.cpp 内实现，保持自包含）
-// ============================================================================
-
-// CRC8: 多项式 0x07，初值 0，计算范围 = CMD+LEN+DATA（不含 SYNC）
-static uint8_t crc8(const uint8_t* d, size_t len) {
-    uint8_t c = 0;
-    for (size_t i = 0; i < len; i++) {
-        c ^= d[i];
-        for (int b = 0; b < 8; b++)
-            c = (c & 0x80) ? static_cast<uint8_t>((c << 1) ^ 0x07)
-                           : static_cast<uint8_t>(c << 1);
-    }
-    return c;
-}
-
-// 构建 MOTOR_CTRL(0x31) 帧: [0xAA][0x31][0x10][m1~m4:16B LE][CRC8]
-static std::vector<uint8_t> buildCtrlFrame(const int32_t v[4]) {
-    std::vector<uint8_t> data(16);
-    for (int i = 0; i < 4; i++) {
-        const uint32_t u = static_cast<uint32_t>(v[i]);     // 补码位模式
-        data[i * 4 + 0] = static_cast<uint8_t>(u & 0xFF);
-        data[i * 4 + 1] = static_cast<uint8_t>((u >> 8) & 0xFF);
-        data[i * 4 + 2] = static_cast<uint8_t>((u >> 16) & 0xFF);
-        data[i * 4 + 3] = static_cast<uint8_t>((u >> 24) & 0xFF);
-    }
-    std::vector<uint8_t> f;
-    f.reserve(4 + data.size());
-    f.push_back(0xAA);
-    f.push_back(0x31);
-    f.push_back(static_cast<uint8_t>(data.size()));
-    f.insert(f.end(), data.begin(), data.end());
-    f.push_back(crc8(&f[1], 2 + data.size()));
-    return f;
-}
-
-// ============================================================================
 // 文本指令发送 + 回显读取（用于 /priority、/mode 确认）
 // ============================================================================
 static std::string sendText(SerialPort& sp, const std::string& raw, int timeoutMs = 1000) {
-    std::string cmd = raw;
-    if (cmd.empty() || cmd.back() != '\n') cmd += '\n';
+    std::string cmd = raw;                          // mdc_lib 打包结果已含结尾 '\n'
     sp.write(cmd);
 
     std::string out;
@@ -146,8 +110,8 @@ struct ControlState {
     std::atomic<bool>    running{true}; // 退出标志
 };
 
-// 发送线程: 按 interval_ms 周期发 0x31 帧，当前值以 ramp 步进逼近目标；
-// 退出前补发全零帧安全停转。
+// 发送线程: 按 interval_ms 周期发 0x31 帧（mdc::bin_motor_ctrl 打包），
+// 当前值以 ramp 步进逼近目标；退出前补发全零帧安全停转。
 static void controlLoop(SerialPort& sp, ControlState& st, int intervalMs, int32_t ramp) {
     int32_t cur[4] = {0, 0, 0, 0};
     while (st.running.load()) {
@@ -159,7 +123,9 @@ static void controlLoop(SerialPort& sp, ControlState& st, int intervalMs, int32_
             else                    cur[i] = tgt;
         }
 
-        const std::vector<uint8_t> frame = buildCtrlFrame(cur);
+        // 打包并发送控制帧（四通道 int32 小端由 mdc_lib 处理）
+        const std::vector<uint8_t> frame =
+            mdc::bin_motor_ctrl(cur[0], cur[1], cur[2], cur[3]);
         sp.write(frame.data(), frame.size());
 
         // 分小段等待，便于及时响应退出
@@ -168,8 +134,7 @@ static void controlLoop(SerialPort& sp, ControlState& st, int intervalMs, int32_
     }
 
     // 退出前发送全零，安全停转（连发两次确保到达）
-    const int32_t zero[4] = {0, 0, 0, 0};
-    const std::vector<uint8_t> zf = buildCtrlFrame(zero);
+    const std::vector<uint8_t> zf = mdc::bin_motor_ctrl(0, 0, 0, 0);
     sp.write(zf.data(), zf.size());
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     sp.write(zf.data(), zf.size());
@@ -220,13 +185,13 @@ int main(int argc, char* argv[]) {
     }
     std::printf("== 已打开 %s @ 2000000-8N1 ==\n", port.c_str());
 
-    // 1) USB 主控优先级（控制帧仲裁关键，见协议规范 §1）
-    std::string r = sendText(sp, "/priority 1");
+    // 1) USB 主控优先级（控制帧仲裁关键，见协议规范 §1；mdc_lib 打包）
+    std::string r = sendText(sp, mdc::text_build("/priority", "1"));
     std::printf("/priority 1 -> %s", r.c_str());
 
-    // 2) 设置四通道控制模式（带参数=写入，仅 RAM，需 /save 持久化）
+    // 2) 设置四通道控制模式（mdc::text_mode 打包；带参数=写入，仅 RAM，需 /save 持久化）
     for (int ch = 1; ch <= 4; ch++) {
-        const std::string cmd = "/mode " + std::to_string(ch) + " " + mode;
+        const std::string cmd = mdc::text_mode(static_cast<uint8_t>(ch), mode);
         const std::string rr = sendText(sp, cmd);
         std::printf("%s -> %s", cmd.c_str(), rr.c_str());
     }

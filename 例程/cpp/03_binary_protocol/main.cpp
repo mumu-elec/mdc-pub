@@ -1,33 +1,54 @@
 // ============================================================================
-// 例程 03: binary_protocol —— 二进制帧协议演示
+// 例程 03: binary_protocol —— mdc_lib 二进制 API 调用指南
 //
-// 流程: 打开串口 → PING(0x01) 打印 ACK 结果
-//       → READ_PARAM(0x10) 读取 config_t(231B)
-//       → 打印前 16 字节 HEX + 解析头部字段(offset 0~10) 并校验 crc
+// 流程: 打开串口 → PING(0x01)：mdc::bin_ping() 打包发送，
+//       mdc::Parser 流式解析 ACK → READ_PARAM(0x10)：mdc::bin_read_param()
+//       发送并接收 231B 应答，mdc::parse_config 解析打印版本与关键字段
+//       → mdc::bin_motor_ctrl 打包示例（仅演示打包，不发送）
+//
+// 说明: 本工程不再包含任何协议实现（CRC8 / 组帧 / 帧解析 / 字节序），
+//       全部调用 mdc_lib（命名空间 mdc），串口收发由 serial_port 完成。
 //
 // 用法: binary_protocol <串口>
 //   Windows: binary_protocol COM3
 //   Linux:   binary_protocol /dev/ttyUSB0
 // ============================================================================
 
+#include <chrono>
 #include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "motor_driver.hpp"
+#include "mdc_lib.hpp"      // mdc_lib：bin_ping / bin_read_param / Parser / parse_ack / parse_config ...
+#include "serial_port.h"    // 串口收发（用户实现）
 
 static void printHex(const uint8_t* p, size_t n) {
     for (size_t i = 0; i < n; i++) std::printf("%02X ", p[i]);
     std::printf("\n");
 }
 
-// 小端读取辅助（协议规定多字节字段一律 LE）
-static uint16_t le16(const uint8_t* p) {
-    return static_cast<uint16_t>(p[0] | (p[1] << 8));
-}
-static uint32_t le32(const uint8_t* p) {
-    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8)
-         | (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+// 读取一帧：串口收到的字节逐字节喂给 mdc::Parser（自动找 0xAA 同步字 +
+// CRC 校验，文本噪声自动丢弃）。收齐一帧返回 true 并输出 cmd/payload；
+// 整体超时返回 false。
+static bool readFrame(SerialPort& sp, mdc::Parser& parser, int timeoutMs,
+                      uint8_t& cmd, std::vector<uint8_t>& payload) {
+    const auto deadline = std::chrono::steady_clock::now()
+                        + std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < deadline) {
+        uint8_t buf[256];
+        const int n = sp.read(buf, sizeof(buf), 100);
+        if (n < 0) return false;                        // 串口出错
+        for (int i = 0; i < n; ++i) {
+            auto r = parser.feed(buf[i]);               // 逐字节喂给流式解析器
+            if (r) {
+                cmd = r->first;
+                payload = std::move(r->second);
+                return true;
+            }
+        }
+    }
+    return false;                                       // 整体超时
 }
 
 int main(int argc, char* argv[]) {
@@ -46,54 +67,93 @@ int main(int argc, char* argv[]) {
     }
     std::printf("== 已打开 %s @ 2000000-8N1 ==\n", argv[1]);
 
-    MotorDriver md(sp);
-
-    // ── 1) PING ──
+    // ── 1) PING：mdc::bin_ping() 打包 → 发送 → mdc::Parser 收帧 → mdc::parse_ack ──
     std::printf("== PING (0x01) ==\n");
-    if (md.ping(500)) {
-        std::printf("  OK: 设备在线，ACK err=0x00\n");
+    mdc::Parser parser;
+    const std::vector<uint8_t> pingFrame = mdc::bin_ping();
+    if (sp.write(pingFrame.data(), pingFrame.size()) < 0) {
+        std::printf("[错误] 发送失败: %s\n", sp.lastError().c_str());
+        sp.close();
+        return 1;
+    }
+    uint8_t cmd = 0;
+    std::vector<uint8_t> payload;
+    if (readFrame(sp, parser, 1000, cmd, payload) && cmd == mdc::MD_CMD_PING) {
+        mdc::Ack ack;
+        if (mdc::parse_ack(payload, ack) && ack.ok()) {
+            std::printf("  OK: 设备在线，ACK err=0x00\n");
+        } else {
+            std::printf("  失败: ACK err=0x%02X\n", ack.err);
+        }
     } else {
-        std::printf("  失败: 无 ACK 应答或 err=0xFF\n");
+        std::printf("  失败: 无 ACK 应答\n");
     }
 
-    // ── 2) READ_PARAM ──
+    // ── 2) READ_PARAM：读取 config_t(231B) ──
     std::printf("== READ_PARAM (0x10) ==\n");
-    std::vector<uint8_t> cfg;
-    if (!md.readParam(cfg, 1000)) {
+    const std::vector<uint8_t> readParamFrame = mdc::bin_read_param();
+    if (sp.write(readParamFrame.data(), readParamFrame.size()) < 0) {
+        std::printf("[错误] 发送失败: %s\n", sp.lastError().c_str());
+        sp.close();
+        return 1;
+    }
+    std::vector<uint8_t> raw;
+    if (readFrame(sp, parser, 1000, cmd, payload) && cmd == mdc::MD_CMD_READ_PARAM
+        && payload.size() == mdc::MD_CONFIG_SIZE) {
+        raw = std::move(payload);
+    } else {
         std::printf("  读取失败（无应答或 LEN != 231）\n");
         sp.close();
         return 1;
     }
-    std::printf("  收到 %zu 字节 (期望 231)\n", cfg.size());
+    std::printf("  收到 %zu 字节 (期望 231)\n", raw.size());
 
     // ── 3) 打印前 16 字节 HEX ──
     std::printf("  前 16 字节 HEX: ");
-    printHex(cfg.data(), cfg.size() < 16 ? cfg.size() : 16);
+    printHex(raw.data(), raw.size() < 16 ? raw.size() : 16);
 
-    // ── 4) 解析头部 offset 0~10（受保护区域）──
-    // 布局 v2.1: [0]magic u32 | [4]hw_ver_major u8 | [5]hw_ver_minor u8
-    //           | [6]hw_variant u8 | [7]sw_ver_major u8 | [8]sw_ver_patch u8
-    //           | [9]_reserved u8 | [10]crc u8（覆盖 offset 4 起 sizeof-4 字节）
-    std::printf("== 头部字段解析 (offset 0~10) ==\n");
-    const uint32_t magic = le32(&cfg[0]);
-    std::printf("  magic      [0-3]  = 0x%08X %s\n", magic,
-                magic == 0x4D445200u ? "(正确)" : "(异常)");
-    std::printf("  hw_ver     [4-6]  = %u.%u.%u\n", cfg[4], cfg[5], cfg[6]);
-    std::printf("  sw_ver     [7-8]  = %u.%u\n", cfg[7], cfg[8]);
-    std::printf("  reserved   [9]    = 0x%02X\n", cfg[9]);
-    std::printf("  crc        [10]   = 0x%02X\n", cfg[10]);
+    // ── 4) 版本信息（config_t 头部 offset 0~10 为受保护区，按字节直接显示）──
+    std::printf("== 版本信息 (offset 0~10) ==\n");
+    std::printf("  magic      [0-3]  = %02X %02X %02X %02X %s\n",
+                raw[0], raw[1], raw[2], raw[3],
+                (raw[0] == 0x00 && raw[1] == 'R' && raw[2] == 'D' && raw[3] == 'M')
+                    ? "(正确)" : "(异常)");
+    std::printf("  hw_ver     [4-6]  = %u.%u.%u\n", raw[4], raw[5], raw[6]);
+    std::printf("  sw_ver     [7-8]  = %u.%u\n", raw[7], raw[8]);
+    std::printf("  reserved   [9]    = 0x%02X\n", raw[9]);
+    std::printf("  crc        [10]   = 0x%02X\n", raw[10]);
 
-    // 校验 config_t.crc: crc8(offset 4 起, sizeof-4 = 227B)
-    const uint8_t calc = MotorDriver::crc8(&cfg[4], cfg.size() - 4);
+    // 校验 config_t.crc：mdc::crc8(offset 4 起, sizeof-4 = 227B)
+    const uint8_t calc = mdc::crc8(raw.data() + 4, raw.size() - 4);
     std::printf("  crc 校验          = %s (计算值 0x%02X)\n",
-                calc == cfg[10] ? "通过" : "失败", calc);
+                calc == raw[10] ? "通过" : "失败", calc);
 
-    // ── 5) 顺带解析几个常用可写字段 ──
-    std::printf("== 常用字段 (offset 11~17) ==\n");
-    std::printf("  baud_rate    [11] = %u\n", le32(&cfg[11]));
-    std::printf("  cmd_timeout  [15] = %u ms\n", le16(&cfg[15]));
-    std::printf("  comm_flags   [17] = 0x%02X (bit5=ctrl_priority: %d)\n",
-                cfg[17], (cfg[17] >> 5) & 0x01);
+    // ── 5) mdc::parse_config 解析关键可写字段（含位域，无需手写偏移）──
+    std::printf("== 关键字段 (mdc::parse_config) ==\n");
+    mdc::Config cfg;
+    if (mdc::parse_config(raw, cfg)) {
+        std::printf("  baud_rate       = %u\n", cfg.baud_rate);
+        std::printf("  cmd_timeout_ms  = %u ms\n", cfg.cmd_timeout_ms);
+        std::printf("  protocol        = %u (1=SBUS 2=UART 3=ELRS)\n", cfg.protocol);
+        std::printf("  ctrl_priority   = %u (0=USART2 优先 1=USB 优先)\n", cfg.ctrl_priority);
+        std::printf("  control_mode    = ");
+        for (int i = 0; i < 4; i++) std::printf("%d ", static_cast<int>(cfg.control_mode[i]));
+        std::printf("(0=开环 1=速度 2=位置)\n");
+        std::printf("  encoder_cpr     = ");
+        for (int i = 0; i < 4; i++) std::printf("%u ", static_cast<unsigned>(cfg.encoder_cpr[i]));
+        std::printf("\n");
+    } else {
+        std::printf("  parse_config 失败\n");
+    }
+
+    // ── 6) mdc::bin_motor_ctrl 打包示例（仅演示打包，不发送以免驱动电机）──
+    std::printf("== bin_motor_ctrl 打包示例 (0x31) ==\n");
+    const std::vector<uint8_t> ctrl = mdc::bin_motor_ctrl(100, -200, 0, 300);
+    std::printf("  整帧 %zu 字节: ", ctrl.size());
+    printHex(ctrl.data(), ctrl.size());
+    std::printf("  DATA 段(16B): ");
+    printHex(ctrl.data() + 3, 16);
+    std::printf("  含义: 开环=PWM(±1000) / 速度=RPM / 位置=0.1°；int32 小端由库处理\n");
 
     sp.close();
     std::printf("== 完成，串口已关闭 ==\n");

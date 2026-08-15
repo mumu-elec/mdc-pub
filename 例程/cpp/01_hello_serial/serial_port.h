@@ -1,4 +1,4 @@
-#ifndef SERIAL_PORT_H
+﻿#ifndef SERIAL_PORT_H
 #define SERIAL_PORT_H
 
 // ============================================================================
@@ -7,7 +7,7 @@
 // 适用设备 : Motor Driver Controller（STM32F401 + TB6612 四路直流电机驱动器）
 // 通信参数 : USB 虚拟串口（CH340N）固定 2000000-8N1
 // 依赖     : 零第三方库，仅系统 API
-// 平台分支 :
+// 平台差异 :
 //   _WIN32  → CreateFile / SetCommState(DCB, BaudRate=2000000) / COMMTIMEOUTS
 //             / ReadFile / WriteFile
 //   else    → termios（cfsetispeed / cfsetospeed B2000000 / tcsetattr）
