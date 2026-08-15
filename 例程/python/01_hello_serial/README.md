@@ -1,4 +1,4 @@
-# 01_hello_serial — 最小连通性测试
+﻿# 01_hello_serial — 最小连通性测试
 
 ## 功能
 
@@ -25,8 +25,8 @@ pip install pyserial        # 或 pip install -r requirements.txt
 ```
 
 - **mdc_lib**：协议打包/解析统一由通用调用库 mdc_lib 完成，本脚本只负责串口收发。
-  正式工程把 `mdc_lib/python/mdc_lib.py` 复制到项目目录即可；
-  在本仓库内直接运行本例程时，代码已自动把 `../../../mdc_lib/python` 加入模块搜索路径（见文件顶部）。
+  mdc_lib 已随例程内置（本目录 `mdc_lib.py`），开箱即用，直接 `import mdc_lib` 即可；
+  如需更新库版本，用 `../../../mdc_lib/python/mdc_lib.py` 覆盖本目录文件。
 
 ## mdc_lib 调用指南
 

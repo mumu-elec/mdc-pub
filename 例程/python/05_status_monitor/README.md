@@ -1,4 +1,4 @@
-# 05_status_monitor — 状态监控
+﻿# 05_status_monitor — 状态监控
 
 ## 功能
 
@@ -28,7 +28,7 @@ pip install pyserial        # 或 pip install -r requirements.txt
 ```
 
 - **mdc_lib**：订阅/退订帧的打包与 STATUS_REPORT 的解析统一由通用调用库完成（`md_bin_subscribe` / `md_bin_unsubscribe` / `MDParser` / `md_parse_status`），本脚本只负责串口收发、读线程与表格显示。
-  正式工程把 `mdc_lib/python/mdc_lib.py` 复制到项目目录即可；本仓库内直接运行时代码已自动加载（见文件顶部）。
+  mdc_lib 已随例程内置（本目录 `mdc_lib.py`），开箱即用，直接 `import mdc_lib` 即可；如需更新库版本，用 `../../../mdc_lib/python/mdc_lib.py` 覆盖本目录文件。
 
 ## mdc_lib 调用指南
 

@@ -1,4 +1,4 @@
-# 04_motor_control — 实时电机控制
+﻿# 04_motor_control — 实时电机控制
 
 ## 功能
 
@@ -41,7 +41,7 @@ pip install pyserial        # 或 pip install -r requirements.txt
 ```
 
 - **mdc_lib**：0x31 控制帧的打包（含 CRC8/组帧）与 `/priority` 文本指令的构造统一由通用调用库完成，本脚本只负责串口收发、斜坡平滑与键盘交互。
-  正式工程把 `mdc_lib/python/mdc_lib.py` 复制到项目目录即可；本仓库内直接运行时代码已自动加载（见文件顶部）。
+  mdc_lib 已随例程内置（本目录 `mdc_lib.py`），开箱即用，直接 `import mdc_lib` 即可；如需更新库版本，用 `../../../mdc_lib/python/mdc_lib.py` 覆盖本目录文件。
 
 ## mdc_lib 调用指南
 
