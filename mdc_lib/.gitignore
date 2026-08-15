@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# C/C++ 构建产物
+build/
+*.o
+*.obj
+*.exe
+*.out
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
