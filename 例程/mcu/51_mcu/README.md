@@ -1,4 +1,4 @@
-# 51 单片机例程 — Keil C51（UART1 中断收发，9600 波特率连 RC 口，mdc_lib 打包）
+﻿# 51 单片机例程 — Keil C51（UART1 中断收发，9600 波特率连 RC 口，mdc_lib 打包）
 
 基于 **AT89C52 / STC89C52（Keil C51，11.0592MHz 晶振）** 的 Motor Driver Controller 单片机例程：UART1（模式 1）以 **9600** 波特率连接控制板 **RC 接口（USART2）**，UART 中断接收、回车后整行转发，并演示文本指令与可选二进制控制帧。**协议打包/解析全部由 mdc_lib 完成**，本工程只负责串口收发。
 
@@ -50,23 +50,12 @@ AT89C52/STC89C52                  Motor Driver Controller
 
 ## 依赖与 mdc_lib
 
-本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，不依赖任何 Keil 外设头文件）。需要两个文件：
+本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，不依赖任何 Keil 外设头文件）：
 
-- `mdc_lib/51/keil/mdc_lib.h`
-- `mdc_lib/51/keil/mdc_lib.c`
-
-**加入 Keil 工程步骤**（在 `release/site/motor_driver_control/` 目录下执行，Windows）：
-
-```
-copy mdc_lib\51\keil\mdc_lib.h 例程\mcu\51_mcu\
-copy mdc_lib\51\keil\mdc_lib.c 例程\mcu\51_mcu\
-```
-
-然后在 Keil µVision 中：
-
-1. 把 `mdc_lib.c` 加入工程：右键 Source Group 1 → **Add Existing Files…** 选择 `mdc_lib.c`。
-2. 添加头文件路径：**Options for Target → C51 → Include Paths** 添加 `mdc_lib.h` 所在目录。
-3. （推荐）**Options for Target → C51 → Preprocessor Symbols → Define** 填入 `MD_ENABLE_CONFIG=0`：本例程不用 config 全字段函数，这样 `mdc_lib.c` 会编译掉 `md_pack_config` / `md_parse_config` / `md_bin_write_param` 及 231B 的 xdata 缓冲，省 RAM/代码空间。`main.c` 里也已预置该宏（仅作用于 main.c，工程级定义两者都生效）。
+- `mdc_lib.h` / `mdc_lib.c` **已随例程内置（本目录）**，无需手动复制。
+- **加入 Keil 工程**：右键 Source Group 1 → **Add Existing Files…** 把本目录的 `mdc_lib.c` 加入工程；并在 **Options for Target → C51 → Include Paths** 添加 `mdc_lib.h` 所在目录（本目录）。
+- 如需更新库版本，用 `../../../mdc_lib/51/keil/` 下的同名文件覆盖本目录文件即可。
+- （推荐）**Options for Target → C51 → Preprocessor Symbols → Define** 填入 `MD_ENABLE_CONFIG=0`：本例程不用 config 全字段函数，这样 `mdc_lib.c` 会编译掉 `md_pack_config` / `md_parse_config` / `md_bin_write_param` 及 231B 的 xdata 缓冲，省 RAM/代码空间。`main.c` 里也已预置该宏（仅作用于 main.c，工程级定义两者都生效）。
 
 **内存说明（重要）**：8051 内部 RAM 很小（SMALL 模型仅 128B 直接寻址）。本例程的 `rx_buf[32]` + `tx_buf[40]` 放在默认 data 空间，普通 AT89C52 可编译通过；行缓冲因此限制为 31 字符。若需更长的命令行，可把两个缓冲改到 `xdata`（STC89C52RC 等有扩展 RAM 的型号）或减小缓冲。
 

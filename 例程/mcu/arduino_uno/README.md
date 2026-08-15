@@ -1,4 +1,4 @@
-# Arduino UNO 例程 — SoftwareSerial 连接 RC 口（mdc_lib 打包/解析 + 数字快捷键菜单）
+﻿# Arduino UNO 例程 — SoftwareSerial 连接 RC 口（mdc_lib 打包/解析 + 数字快捷键菜单）
 
 基于 **Arduino UNO（ATmega328P，16MHz）** 的 Motor Driver Controller 单片机例程：用 SoftwareSerial 连接控制板 **RC 接口（USART2）**，支持文本指令终端交互、0x31 实时控制帧发送与 0xF0 状态上报解析。**协议打包/解析全部由 mdc_lib 完成**，本工程只负责串口收发。
 
@@ -57,19 +57,10 @@ Arduino UNO                     Motor Driver Controller
 
 ## 依赖与 mdc_lib
 
-本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，串口收发由本工程实现）。需要两个文件：
+本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，串口收发由本工程实现）：
 
-- `mdc_lib/avr/arduino_uno/mdc_lib.h`
-- `mdc_lib/avr/arduino_uno/mdc_lib.cpp`
-
-**复制步骤**（把两个文件复制到本 sketch 目录，与 `motor_driver_uno.ino` 同目录）。在 `release/site/motor_driver_control/` 目录下执行（Windows）：
-
-```
-copy mdc_lib\avr\arduino_uno\mdc_lib.h   例程\mcu\arduino_uno\
-copy mdc_lib\avr\arduino_uno\mdc_lib.cpp 例程\mcu\arduino_uno\
-```
-
-- Arduino IDE 打开 sketch 时会**自动编译同目录下的 `.cpp` 文件**，无需手动添加源文件。
+- `mdc_lib.h` / `mdc_lib.cpp` **已随例程内置（本目录）**，与 `motor_driver_uno.ino` 同目录；Arduino IDE 打开 `.ino` 即自动编译，无需手动复制或添加源文件。
+- 如需更新库版本，用 `../../../mdc_lib/avr/arduino_uno/` 下的同名文件覆盖本目录文件即可。
 - 代码中 `#include "mdc_lib.h"` 即可使用全部 `md_*` API。
 - 内存说明：UNO 只有 2KB SRAM，本例程使用 mdc_lib **默认配置**（流式解析器缓冲 256B，声明为全局静态，0xF0 状态帧整帧 60B、甚至 READ_PARAM 的 231B 应答都能完整解析）。注意：若想裁剪 `MD_PARSER_BUF`，必须通过编译选项 `-DMD_PARSER_BUF=xxx` **同时作用于 mdc_lib.cpp**（Arduino 会分别编译 sketch 目录下的 .cpp），否则两个编译单元结构体布局不一致会导致解析器越界——不建议初学者修改。
 
@@ -118,7 +109,7 @@ while (rcSerial.available()) {
 ## 开发环境与编译
 
 1. 安装 [Arduino IDE](https://www.arduino.cc/en/software)（任意近期版本）。
-2. 按上文把 `mdc_lib.h` / `mdc_lib.cpp` 复制到 sketch 目录。
+2. mdc_lib 已随例程内置（本目录），无需复制；Arduino IDE 会自动编译同目录的 `mdc_lib.cpp`。
 3. 板型选择：**工具 → 开发板 → Arduino AVR Boards → Arduino Uno**。
 4. 端口选择：**工具 → 端口 → 选择 UNO 对应的 COM 口**。
 5. 打开 `motor_driver_uno.ino`，点击「上传」（本例程不依赖任何第三方库，仅用内置 SoftwareSerial + mdc_lib）。
