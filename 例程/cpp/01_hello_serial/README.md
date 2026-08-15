@@ -1,4 +1,4 @@
-# 01_hello_serial — 最小连通测试
+﻿# 01_hello_serial — 最小连通测试
 
 ## 功能
 
@@ -21,8 +21,8 @@
 
 mdc_lib 是 Motor Driver Controller 的**通用调用库**：只负责「打包要发送的数据」与「解析收到的数据」（CRC8 / 组帧 / 帧解析等协议细节全部由库完成），**串口收发由本工程自行实现**（`serial_port.h/.cpp`）。
 
-- **本仓库内可直接构建**：本目录 `CMakeLists.txt` 已通过 `include_directories` 指向 `../../../mdc_lib/cpp`，无需任何额外配置。
-- **正式工程接入**：把 `mdc_lib/cpp/mdc_lib.hpp` 复制到工程 include 目录，`#include "mdc_lib.hpp"` 即可使用（单头文件、仅标准库、无需链接）。
+- **开箱即用**：`mdc_lib.hpp` 已随例程内置（本目录），`#include "mdc_lib.hpp"` 直接使用，无需任何额外配置。
+- **更新库版本**：如需更新，用 `../../../mdc_lib/cpp/mdc_lib.hpp` 覆盖本目录的 `mdc_lib.hpp` 即可（单头文件、仅标准库、无需链接）。
 
 ## mdc_lib 调用指南
 
@@ -68,13 +68,13 @@ cl /std:c++17 /EHsc /I..\..\..\mdc_lib\cpp main.cpp serial_port.cpp /Fe:hello_se
 ### Windows — MinGW / MSYS2 g++
 
 ```bat
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -o hello_serial.exe
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -o hello_serial.exe
 ```
 
 ### Linux — g++ 或 CMake
 
 ```bash
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -o hello_serial
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -o hello_serial
 
 # 或 CMake（include_directories 已配置，直接构建）：
 cmake -B build && cmake --build build

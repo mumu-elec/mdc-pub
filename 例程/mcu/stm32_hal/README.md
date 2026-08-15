@@ -1,4 +1,4 @@
-# STM32 HAL 例程 — CubeMX 工程集成（USART2 连 RC 口 + mdc_lib 打包/解析）
+﻿# STM32 HAL 例程 — CubeMX 工程集成（USART2 连 RC 口 + mdc_lib 打包/解析）
 
 基于 **STM32F1/F4 + STM32Cube HAL** 的 Motor Driver Controller 单片机例程。例程按 **STM32F103C8T6（蓝板）** 编写，F4 芯片用法完全相同（仅 CubeMX 选型不同）。**协议打包/解析全部由 mdc_lib 完成**（零 HAL 依赖，纯 C），串口收发由本工程实现。
 
@@ -44,24 +44,14 @@ STM32F103C8T6                   Motor Driver Controller
 
 ## 依赖与 mdc_lib
 
-本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，不 include 任何 HAL 头文件）。需要两个文件：
+本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，不 include 任何 HAL 头文件）：
 
-- `mdc_lib/stm32/hal/mdc_lib.h`
-- `mdc_lib/stm32/hal/mdc_lib.c`
-
-**加入工程步骤**（在 `release/site/motor_driver_control/` 目录下执行，Windows）：
-
-```
-copy mdc_lib\stm32\hal\mdc_lib.h 例程\mcu\stm32_hal\Core\Inc\
-copy mdc_lib\stm32\hal\mdc_lib.c 例程\mcu\stm32_hal\Core\Src\
-```
-
-然后在 CubeIDE / Keil 中：
-
-1. 把 `Core/Src/mdc_lib.c` 加入源文件组（CubeIDE 会自动扫描 `Core/Src`；Keil 需右键 Source Group → Add Existing Files…）。
-2. 确认 `Core/Inc` 在 Include Paths 中（CubeIDE 默认包含；Keil 在 Options for Target → C/C++ → Include Paths 添加）。
-3. 代码中 `#include "mdc_lib.h"` 即可使用全部 `md_*` API，无需链接任何额外库。
-4. 把 `Core/Src/main_example.c` 中的关键内容**合并进 CubeMX 生成的 `main.c`**（见「开发环境与编译」）。
+- `mdc_lib.h` / `mdc_lib.c` **已随例程内置（本目录，与 `Core/` 同级）**，无需手动复制。
+- 在 CubeMX 生成的工程（CubeIDE / Keil）中把这两个文件**加入编译**即可：右键源文件组 → **Add Existing Files to Group…** 选择本目录的 `mdc_lib.c` 与 `mdc_lib.h`（CubeIDE 会自动扫描源文件目录；若文件不在其扫描范围内需手动加入）。
+- 同时确认 `mdc_lib.h` 所在目录在 Include Paths 中（CubeIDE 默认包含；Keil 在 Options for Target → C/C++ → Include Paths 添加）。
+- 如需更新库版本，用 `../../../mdc_lib/stm32/hal/` 下的同名文件覆盖本目录文件即可。
+- 代码中 `#include "mdc_lib.h"` 即可使用全部 `md_*` API，无需链接任何额外库。
+- 把 `Core/Src/main_example.c` 中的关键内容**合并进 CubeMX 生成的 `main.c`**（见「开发环境与编译」）。
 
 ## mdc_lib 调用指南
 
@@ -123,7 +113,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 ### 2. 把 mdc_lib 加入工程
 
-按上文「依赖与 mdc_lib」把 `mdc_lib.h` / `mdc_lib.c` 放入工程并加入 Include Paths。
+按上文「依赖与 mdc_lib」，把已内置（本目录）的 `mdc_lib.h` / `mdc_lib.c` 加入工程编译（Add Existing Files to Group），并确保 `mdc_lib.h` 所在目录在 Include Paths 中。
 
 ### 3. 合并 main_example.c 到 main.c
 
@@ -150,9 +140,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 | 文件 | 内容 |
 |------|------|
-| `Core/Src/mdc_lib.c`（外部） | mdc_lib 实现：CRC8/组帧/帧解析、流式解析器、文本指令层、15 个二进制打包函数、解析层（加入工程即可用） |
+| `mdc_lib.c`（内置，本目录） | mdc_lib 实现：CRC8/组帧/帧解析、流式解析器、文本指令层、15 个二进制打包函数、解析层（加入工程即可用） |
 | `Core/Src/main_example.c` | 集成示例：`uart2_send()`（打包结果 → HAL_UART_Transmit）、`main()` 主循环（订阅 + 50ms 发 0x31 + 0xF0/ACK 打印）、`HAL_UART_RxCpltCallback()`（逐字节喂 `md_parser_feed`） |
-| `Core/Inc/mdc_lib.h`（外部） | mdc_lib 头文件：常量、`md_status_t` / `md_ack_t` / `md_parser_t` 结构体、全部函数声明 |
+| `mdc_lib.h`（内置，本目录） | mdc_lib 头文件：常量、`md_status_t` / `md_ack_t` / `md_parser_t` 结构体、全部函数声明 |
 
 ## 常见问题
 

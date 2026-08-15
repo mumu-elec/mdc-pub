@@ -1,4 +1,4 @@
-# 04 状态订阅监控（ESP32 + MicroPython，基于 mdc_lib）
+﻿# 04 状态订阅监控（ESP32 + MicroPython，基于 mdc_lib）
 
 ## 功能
 - `md_bin_subscribe(50)` 打包 **0x40 SUBSCRIBE** 帧发送，开启 50ms 周期状态上报，控制板随即周期推送 **0xF0 STATUS_REPORT**
@@ -51,7 +51,7 @@
 
 ## 依赖与 mdc_lib
 - 本例程只依赖 MicroPython 标准库（`machine` / `utime`，OLED 可选 `ssd1306` 模块）与 **mdc_lib**。
-- 把 `mdc_lib/esp32/micropython/mdc_lib.py` 上传到 ESP32，与 `main.py` **同目录**（`main.py` 直接 `import mdc_lib`）。
+- `mdc_lib.py` 已随例程内置（本目录），上传整个例程文件夹到设备即可运行（`main.py` 直接 `import mdc_lib`）；如需更新库版本，用 `../../../mdc_lib/esp32/micropython/mdc_lib.py` 覆盖。
 - mdc_lib 是纯计算库（零依赖），只负责协议**打包/解析**；串口收发在例程里自己实现。
 
 ## mdc_lib 调用指南

@@ -1,4 +1,4 @@
-# ESP32 Arduino 例程 — UART2 连 RC 口（mdc_lib 打包/解析 + 双 FreeRTOS 任务）
+﻿# ESP32 Arduino 例程 — UART2 连 RC 口（mdc_lib 打包/解析 + 双 FreeRTOS 任务）
 
 基于 **ESP32 Arduino** 的 Motor Driver Controller 单片机例程：用 HardwareSerial（UART2，TX=17、RX=16）连接控制板 **RC 接口（USART2）**，USB Serial 交互。两个 FreeRTOS 任务并行处理**控制帧发送**与**状态帧解析**。**协议打包/解析全部由 mdc_lib 完成**，本工程只负责串口收发。
 
@@ -53,19 +53,10 @@ ESP32 DevKit                     Motor Driver Controller
 
 ## 依赖与 mdc_lib
 
-本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，串口收发由本工程实现）。需要两个文件：
+本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，串口收发由本工程实现）：
 
-- `mdc_lib/esp32/arduino/mdc_lib.h`
-- `mdc_lib/esp32/arduino/mdc_lib.cpp`
-
-**复制步骤**（把两个文件复制到本 sketch 目录，与 `motor_driver_esp32.ino` 同目录）。在 `release/site/motor_driver_control/` 目录下执行（Windows）：
-
-```
-copy mdc_lib\esp32\arduino\mdc_lib.h   例程\mcu\esp32_arduino\
-copy mdc_lib\esp32\arduino\mdc_lib.cpp 例程\mcu\esp32_arduino\
-```
-
-- Arduino IDE 打开 sketch 时会**自动编译同目录下的 `.cpp` 文件**，无需手动添加源文件。
+- `mdc_lib.h` / `mdc_lib.cpp` **已随例程内置（本目录）**，与 `motor_driver_esp32.ino` 同目录；Arduino IDE 打开 `.ino` 即自动编译，无需手动复制或添加源文件。
+- 如需更新库版本，用 `../../../mdc_lib/esp32/arduino/` 下的同名文件覆盖本目录文件即可。
 - 代码中 `#include "mdc_lib.h"` 即可使用全部 `md_*` API。
 
 ## mdc_lib 调用指南
@@ -112,7 +103,7 @@ while (Serial2.available() > 0) {
 ## 开发环境与编译
 
 1. 安装 [Arduino IDE](https://www.arduino.cc/en/software)。
-2. 按上文把 `mdc_lib.h` / `mdc_lib.cpp` 复制到 sketch 目录。
+2. mdc_lib 已随例程内置（本目录），无需复制；Arduino IDE 会自动编译同目录的 `mdc_lib.cpp`。
 3. 安装 ESP32 开发板包：**文件 → 首选项 → 附加开发板管理器网址** 填入 `https://dl.espressif.com/dl/package_esp32_index.json`，然后 **工具 → 开发板 → 开发板管理器** 搜索 `esp32` 安装 **esp32 by Espressif Systems**。
 4. 板型选择：**工具 → 开发板 → ESP32 Arduino → ESP32 Dev Module**。
 5. 端口选择：**工具 → 端口 → 选择 ESP32 的 COM 口**（需先装 CP210x/CH340 驱动，视开发板而定）。

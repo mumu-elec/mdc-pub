@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 05_status_monitor — 状态监控例程
@@ -24,9 +24,8 @@ import time
 
 import serial
 
-# 加载本仓库 mdc_lib（正式工程：复制 mdc_lib/python/mdc_lib.py 到项目目录即可）
+# mdc_lib 已随例程内置（本目录 mdc_lib.py）；如需更新库版本，用 ../mdc_lib/python/mdc_lib.py 覆盖
 import os, sys
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "mdc_lib", "python"))
 import mdc_lib
 
 BAUDRATE = 2000000

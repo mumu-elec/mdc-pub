@@ -1,4 +1,4 @@
-# 01 UART Hello — UART 最小连通例程（ESP32 + MicroPython，基于 mdc_lib）
+﻿# 01 UART Hello — UART 最小连通例程（ESP32 + MicroPython，基于 mdc_lib）
 
 ## 功能
 - 初始化 ESP32 的 UART2（TX=GPIO17，RX=GPIO16，波特率 115200）——**串口收发由例程自己实现**
@@ -39,7 +39,7 @@
 
 ## 依赖与 mdc_lib
 - 本例程只依赖 MicroPython 标准库（`machine` / `utime`）与 **mdc_lib**。
-- 把 `mdc_lib/esp32/micropython/mdc_lib.py` 上传到 ESP32，与 `main.py` **同目录**（`main.py` 直接 `import mdc_lib`）。
+- `mdc_lib.py` 已随例程内置（本目录），上传整个例程文件夹到设备即可运行（`main.py` 直接 `import mdc_lib`）；如需更新库版本，用 `../../../mdc_lib/esp32/micropython/mdc_lib.py` 覆盖。
 - mdc_lib 是纯计算库（零依赖），只负责协议**打包/解析**，不碰串口；串口收发在例程里自己实现。
 
 ## mdc_lib 调用指南
