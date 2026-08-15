@@ -1,19 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-01_uart_hello — UART 最小连通例程（ESP32 + MicroPython）
+01_uart_hello — UART 最小连通例程（ESP32 + MicroPython，基于 mdc_lib）
 
 功能：
-  1. 初始化 ESP32 UART2（TX=GPIO17, RX=GPIO16, 115200）
-  2. 发送文本指令 /version\n，循环读取控制板回显并打印（带超时）
-  3. 再发送 /status\n，读取并打印控制板全部配置参数
+  1. 初始化 ESP32 UART2（TX=GPIO17, RX=GPIO16, 115200）——串口收发是本例程（用户侧）代码
+  2. 用 mdc_lib.md_text_version() 打包文本指令 /version\\n 并发送，循环读取控制板回显打印
+  3. 用 mdc_lib.md_text_build("/status", None) 打包 /status\\n 并发送，读取打印全部配置参数
+
+协议打包/解析一律由 mdc_lib 完成，本例程只负责 UART 读写：
+  - md_text_version()               -> b"/version\\n"
+  - md_text_build("/status", None)  -> b"/status\\n"（None = 不带参数 = 读取模式）
 
 前置条件：
-  控制板 USART2 已配置为 UART 模式（先用 USB 上位机发送文本指令：
-  /uart2 115200 0 uart），且 ESP32 与控制板共地。
+  - 控制板 USART2 已配置为 UART 模式（见 README「控制板预配置」）
+  - mdc_lib.py 已上传到设备并与 main.py 同目录
+  - ESP32 与控制板共地
 """
 
 from machine import UART, Pin
 import utime
+import mdc_lib
 
 # ---------------- 用户可调参数（按板子修改） ----------------
 UART_ID = 2            # ESP32 UART 编号
@@ -53,22 +59,23 @@ def show(buf):
         print(repr(buf))
 
 
-def send_cmd(cmd, timeout_ms=TIMEOUT_MS):
-    """发送一条文本指令（自动补 \n）并读取回显打印。"""
-    print(">>> %s" % cmd)
-    uart.write(cmd + "\n")
+def send_payload(payload, timeout_ms=TIMEOUT_MS):
+    """发送 mdc_lib 打包好的文本行字节（已含 \\n），读取回显打印。"""
+    uart.write(payload)
     show(read_all(timeout_ms))
 
 
 def main():
-    print("=== Motor Driver Controller UART Hello (ESP32) ===")
+    print("=== Motor Driver Controller UART Hello (ESP32, mdc_lib) ===")
     print("UART%d  TX=GPIO%d  RX=GPIO%d  @ %d baud" % (UART_ID, TX_PIN, RX_PIN, BAUD))
 
-    # 1) 版本查询
-    send_cmd("/version")
+    # 1) 版本查询：md_text_version() 打包 /version\n
+    print(">>> /version")
+    send_payload(mdc_lib.md_text_version())
 
-    # 2) 状态查询（打印全部配置参数）
-    send_cmd("/status")
+    # 2) 状态查询：md_text_build("/status", None) 打包 /status\n（None = 读取模式）
+    print(">>> /status")
+    send_payload(mdc_lib.md_text_build("/status", None))
 
     print("=== 完成 ===")
 
