@@ -3,26 +3,38 @@
 """
 02_text_commands — 文本指令交互工具
 ====================================
-封装文本指令的发送/回显读取（send / query），提供：
-  * 交互式 REPL：直接输入任意 /xxx 指令，回车即发送并打印回显
-  * 数字快捷菜单：1~8 一键执行常用指令，9 退出
+交互式文本指令终端：
+  * 直接输入任意文本指令（如 /speedctrl 1 0.5 0.02 0.01）发送并打印回显；
+    指令统一交给 mdc_lib.md_text_build(cmd, args) 打包（缺 "/" 自动补上；
+    带参数 = 写入 / 不带参数 = 读取模式，见协议规范 §2.1）。
+  * 数字快捷菜单：快捷键同样由 mdc_lib 文本函数构造：
+        1 = /version          2 = /check（实时状态）
+        3 = /status（配置）   4 = /mode 1 speed
+        5 = /mode 1 open      6 = /save
+        7 = 退出
+  * h 显示菜单，q 退出。
 
 用法：
     python text_commands.py                # 自动选择第一个 CH340
     python text_commands.py --port COM5    # 指定串口
 
 ⚠️ 实时控制注意事项（协议规范 §1）：
-  * 上位机（USB）做实时控制前请先执行 `/priority 1`，否则控制帧受仲裁可能被拒绝；
+  * USB 主控（PC）做实时控制前请先执行 `/priority 1`，否则控制帧（0x30/0x31）
+    受仲裁可能被拒绝；
   * `/timeout <ms>` 为指令超时保护：超过设定时间未收到控制指令，电机输出自动归零
     （0 = 关闭保护；同时作为优先级心跳窗口，最小 100ms）。
 """
 
 import argparse
-import sys
 import time
 
 import serial
 from serial.tools import list_ports
+
+# 加载本仓库 mdc_lib（正式工程：复制 mdc_lib/python/mdc_lib.py 到项目目录即可）
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "mdc_lib", "python"))
+import mdc_lib
 
 
 def setup_console():
@@ -36,17 +48,16 @@ def setup_console():
 BAUDRATE = 2000000
 CH340_VID = 0x1A86
 
-# 数字快捷菜单：数字 → (指令, 说明)；9 为退出
+# 数字快捷菜单：键 → (说明, mdc_lib 打包好的指令 bytes)；"7" 为退出
+# 快捷键指令全部由 mdc_lib 文本函数构造，发送时直接 ser.write(bytes)
 MENU = [
-    ("1", "/version",                       "查版本"),
-    ("2", "/check",                         "查实时状态"),
-    ("3", "/status",                        "查全部配置"),
-    ("4", "/mode 1 speed",                  "设通道1为速度模式"),
-    ("5", "/mode 1 open",                   "设通道1为开环"),
-    ("6", "/speedctrl 1 0.5 0.02 0.01",     "速度环参数示例 (kp ki kd)"),
-    ("7", "/enczero 1",                     "通道1编码器清零"),
-    ("8", "/save",                          "保存到 EEPROM"),
-    ("9", None,                             "退出"),
+    ("1", "查版本",        mdc_lib.md_text_version()),
+    ("2", "查实时状态",    mdc_lib.md_text_check()),
+    ("3", "查全部配置",    mdc_lib.md_text_status()),
+    ("4", "通道1 速度模式", mdc_lib.md_text_mode(1, "speed")),
+    ("5", "通道1 开环",     mdc_lib.md_text_mode(1, "open")),
+    ("6", "保存到 EEPROM",  mdc_lib.md_text_save()),
+    ("7", "退出",          None),
 ]
 
 
@@ -66,8 +77,16 @@ def pick_port(explicit):
     return None
 
 
+def build_cmd_bytes(line):
+    """用户输入 → mdc_lib 打包：拆成 cmd + args，缺 "/" 自动补上。"""
+    parts = line.strip().split(maxsplit=1)
+    cmd = parts[0]
+    args = parts[1] if len(parts) > 1 else None
+    return mdc_lib.md_text_build(cmd, args)
+
+
 class TextTerminal:
-    """文本指令终端：封装发送 + 回显读取。"""
+    """文本指令终端：串口收发由本类实现，指令打包调用 mdc_lib。"""
 
     def __init__(self, port, baudrate=BAUDRATE):
         self.ser = serial.Serial(port, baudrate, timeout=0.05)
@@ -87,24 +106,18 @@ class TextTerminal:
                 break
         return data
 
-    def send(self, cmd):
-        """发送一行文本指令并打印回显（交互场景）。返回回显文本。"""
-        line = cmd.strip()
-        if not line:
-            return ""
-        print(f"\n>>> {line}")
-        self.ser.write(line.encode("ascii", errors="replace") + b"\n")
+    def send(self, cmd, label=None):
+        """发送一条 mdc_lib 打包的文本指令（bytes，含 \\n）并打印回显。返回回显文本。"""
+        if label is None:
+            label = cmd.decode("utf-8").strip()
+        print(f"\n>>> {label}")
+        self.ser.write(cmd)
         text = self.read_echo().decode("utf-8", errors="replace").rstrip()
         if text:
             print(text)
         else:
             print("    (无回显)")
         return text
-
-    def query(self, cmd, timeout=1.0):
-        """发送一行文本指令，返回完整回显文本（不打印）。"""
-        self.ser.write(cmd.strip().encode("ascii", errors="replace") + b"\n")
-        return self.read_echo(timeout=timeout).decode("utf-8", errors="replace")
 
     def close(self):
         if self.ser.is_open:
@@ -113,13 +126,13 @@ class TextTerminal:
 
 def print_menu():
     print("\n-------- 快捷菜单 --------")
-    for key, cmd, desc in MENU:
-        if cmd:
-            print(f"  [{key}] {desc:<14} -> {cmd}")
+    for key, desc, frame in MENU:
+        if frame is not None:
+            print(f"  [{key}] {desc:<12} -> {frame.decode('utf-8').strip()}")
         else:
             print(f"  [{key}] {desc}")
     print("  [h] 显示本菜单      [q] 退出")
-    print("  或直接输入任意 /xxx 指令发送")
+    print("  或直接输入任意指令（如 /speedctrl 1 0.5 0.02 0.01，缺 '/' 自动补上）")
 
 
 def main():
@@ -152,25 +165,23 @@ def main():
                 print("\n输入结束，退出。")
                 break
 
-            if line in ("q", "quit", "exit"):
+            if line in ("7", "q", "quit", "exit"):
                 break
             if line in ("h", "help", "?"):
                 print_menu()
                 continue
-            if line in ("9",):
-                break
 
-            # 数字快捷菜单
-            for key, cmd, _ in MENU:
-                if line == key and cmd:
-                    term.send(cmd)
+            # 数字快捷菜单（指令已由 mdc_lib 打包好）
+            for key, desc, frame in MENU:
+                if line == key and frame is not None:
+                    term.send(frame, label=desc)
                     break
             else:
-                # 直接输入指令
-                if line.startswith("/"):
-                    term.send(line)
-                elif line:
-                    print("  请输入 /xxx 指令，或输入 h 查看菜单。")
+                # 直接输入指令：md_text_build 构造（缺 "/" 自动补上）
+                try:
+                    term.send(build_cmd_bytes(line))
+                except ValueError as e:
+                    print(f"  [错误] {e}")
     except KeyboardInterrupt:
         print("\n用户中断 (Ctrl+C)，干净退出。")
     finally:

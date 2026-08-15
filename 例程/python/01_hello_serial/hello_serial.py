@@ -4,7 +4,12 @@
 01_hello_serial — 最小连通性测试例程
 ====================================
 连接 Motor Driver Controller 的 USB 虚拟串口（CH340N，固定 2000000-8N1），
-依次发送 /version 与 /status 两条文本指令并打印回显。
+用 mdc_lib 构造文本指令发送并打印回显：
+    md_text_version()            ->  b"/version\\n"   查硬件/软件版本
+    md_text_build("/status")     ->  b"/status\\n"    查全部配置参数
+
+本例程演示「串口收发留在用户侧、协议打包调用 mdc_lib」的用法：
+mdc_lib 只负责把指令打包成要发送的 bytes，串口的打开/写入/读取由本脚本完成。
 
 用法：
     python hello_serial.py                # 自动选择第一个 CH340 串口
@@ -15,11 +20,15 @@
 """
 
 import argparse
-import sys
 import time
 
 import serial
 from serial.tools import list_ports
+
+# 加载本仓库 mdc_lib（正式工程：复制 mdc_lib/python/mdc_lib.py 到项目目录即可）
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "mdc_lib", "python"))
+import mdc_lib
 
 
 def setup_console():
@@ -68,10 +77,10 @@ def read_echo(ser, timeout=1.0, quiet=0.15):
     return data
 
 
-def send_and_print(ser, cmd):
-    """发送一条文本指令（以 \\n 结尾）并打印回显。"""
-    print(f"\n>>> 发送: {cmd}")
-    ser.write(cmd.encode("ascii") + b"\n")
+def send_and_print(ser, cmd, label):
+    """发送一条 mdc_lib 打包的文本指令（bytes，含 \\n）并打印回显。"""
+    print(f"\n>>> 发送: {label}  ({cmd.decode('utf-8').strip()})")
+    ser.write(cmd)
     echo = read_echo(ser)
     if echo:
         print(echo.decode("utf-8", errors="replace").rstrip())
@@ -111,8 +120,9 @@ def main():
         ser.reset_input_buffer()          # 清空历史残留字节
         print(f"已打开 {port} @ {BAUDRATE}-8N1\n")
 
-        send_and_print(ser, "/version")
-        send_and_print(ser, "/status")
+        # 文本指令由 mdc_lib 打包，串口收发在本脚本完成
+        send_and_print(ser, mdc_lib.md_text_version(), "/version")
+        send_and_print(ser, mdc_lib.md_text_build("/status"), "/status")
         print("\n连通性测试完成 [OK]")
     except serial.SerialException as e:
         print(f"\n[错误] 串口打开失败: {e}")

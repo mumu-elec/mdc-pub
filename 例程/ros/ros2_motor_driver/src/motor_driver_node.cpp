@@ -3,20 +3,20 @@
 //
 // 硬件: Motor Driver Controller (STM32F401 + TB6612, 四路带编码器直流电机)
 // 协议: 例程/common/协议规范.md (布局 v2.1, config_t = 231B)
-//   - 文本指令 : /priority 1\n  启动时发送, 使 USB 成为控制主控
-//   - 二进制帧 : 0xAA + CMD + LEN + DATA + CRC8
-//                CRC8 多项式 0x07, 初值 0, 计算范围 = CMD+LEN+DATA (不含 SYNC)
-//   - 状态帧   : 0xF0 STATUS_REPORT (常规 56B / 扩展 72B, 全部小端 LE)
-//   - 控制帧   : 0x31 MOTOR_CTRL [m1~m4: 4×int32 LE]
-//   - 配置帧   : 0x10 READ_PARAM / 0x11 WRITE_PARAM / 0x20 SAVE_EEPROM
-//   - 订阅帧   : 0x40 SUBSCRIBE / 0x41 UNSUBSCRIBE
+//
+// 本节点基于 mdc_lib 通用调用库 (mdc_lib/cpp/mdc_lib.hpp, 命名空间 mdc):
+//   - 协议打包与解析全部由 mdc_lib 完成:
+//       文本指令  -> mdc::text_build
+//       二进制帧  -> mdc::bin_xxx (含 SYNC/CRC8 组帧)
+//       收到数据  -> mdc::Parser 流式解析 (自动找 0xAA + CRC8 校验)
+//       状态/配置 -> mdc::parse_status / mdc::parse_config / mdc::pack_config
+//   - 节点不再自行实现 CRC8 / 组帧 / 滑动窗口解析, 只负责串口收发与 ROS 接口。
 //
 // 串口: USB 虚拟串口 (CH340N), 固定 2000000-8N1, Linux termios 直接操作,
 //       不依赖第三方串口库; 读操作使用 select 超时。
 // =====================================================================
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -32,6 +32,9 @@
 #include <termios.h>
 #include <unistd.h>
 
+// mdc_lib 通用调用库 (header-only, 零依赖): include 路径见 CMakeLists.txt
+#include "mdc_lib.hpp"
+
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/header.hpp"
 
@@ -42,66 +45,6 @@
 #include "ros2_motor_driver/srv/save_config.hpp"
 
 using namespace std::chrono_literals;
-
-// ---------------- CRC8 (协议规范 §3.1: 多项式 0x07, 初值 0) ----------------
-static uint8_t crc8(const uint8_t* d, size_t len)
-{
-    uint8_t c = 0;
-    for (size_t i = 0; i < len; i++) {
-        c ^= d[i];
-        for (int b = 0; b < 8; b++) {
-            c = (c & 0x80) ? (uint8_t)((c << 1) ^ 0x07) : (uint8_t)(c << 1);
-        }
-    }
-    return c;
-}
-
-// ---------------- 小端 (LE) 读写辅助 ----------------
-static uint16_t get_le16(const uint8_t* p)
-{
-    return (uint16_t)(p[0] | (uint16_t)(p[1] << 8));
-}
-
-static uint32_t get_le32(const uint8_t* p)
-{
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static float get_le32f(const uint8_t* p)
-{
-    uint32_t u = get_le32(p);
-    float f;
-    memcpy(&f, &u, sizeof(f));
-    return f;
-}
-
-static void put_le16(std::vector<uint8_t>& v, uint16_t x)
-{
-    v.push_back((uint8_t)(x & 0xFF));
-    v.push_back((uint8_t)((x >> 8) & 0xFF));
-}
-
-static void put_le32(std::vector<uint8_t>& v, uint32_t x)
-{
-    v.push_back((uint8_t)(x & 0xFF));
-    v.push_back((uint8_t)((x >> 8) & 0xFF));
-    v.push_back((uint8_t)((x >> 16) & 0xFF));
-    v.push_back((uint8_t)((x >> 24) & 0xFF));
-}
-
-// 组帧: frame = [0xAA, cmd, len, data..., crc8(cmd+len+data)]
-static std::vector<uint8_t> build_frame(uint8_t cmd, const std::vector<uint8_t>& data)
-{
-    std::vector<uint8_t> f;
-    f.reserve(4 + data.size());
-    f.push_back(0xAA);
-    f.push_back(cmd);
-    f.push_back((uint8_t)data.size());
-    f.insert(f.end(), data.begin(), data.end());
-    f.push_back(crc8(f.data() + 1, f.size() - 1));  // CRC 范围 = CMD+LEN+DATA（f.size() 此时 = 3+len，-1 = 2+len）
-    return f;
-}
 
 // ---------------- 串口类 (Linux termios, 零第三方依赖) ----------------
 class SerialPort
@@ -189,7 +132,7 @@ private:
             case 1000000: return B1000000;
             case 1152000: return B1152000;
             case 1500000: return B1500000;
-            case 2000000: return B2000000;  // 固件 USB 口固定 2000000-8N1 (默认)
+            case 2000000: return B2000000;  // 设备 USB 口固定 2000000-8N1 (默认)
             case 2500000: return B2500000;
             case 3000000: return B3000000;
             case 3500000: return B3500000;
@@ -222,7 +165,7 @@ public:
         status_interval_ms_ = declare_parameter<int>("status_interval_ms", 50);
         send_priority_cmd_ = declare_parameter<bool>("send_priority_cmd", true);
         if (status_interval_ms_ < 20) {
-            RCLCPP_WARN(get_logger(), "status_interval_ms 小于固件下限 20ms, 已钳位为 20");
+            RCLCPP_WARN(get_logger(), "status_interval_ms 小于设备上报下限 20ms, 已钳位为 20");
             status_interval_ms_ = 20;
         }
 
@@ -238,10 +181,20 @@ public:
                    const std::shared_ptr<ros2_motor_driver::srv::GetConfig::Request> /*req*/,
                    const std::shared_ptr<ros2_motor_driver::srv::GetConfig::Response> resp) {
                 std::vector<uint8_t> out;
-                int r = send_cmd_wait_reply(0x10, {}, 1500, &out);   // READ_PARAM
-                if (r == REPLY_DATA && out.size() == 231) {
+                // READ_PARAM (0x10): mdc_lib 打包空帧
+                int r = send_frame_wait_reply(mdc::MD_CMD_READ_PARAM,
+                                              mdc::bin_read_param(), 1500, &out);
+                if (r == REPLY_DATA && out.size() == mdc::MD_CONFIG_SIZE) {
                     std::copy(out.begin(), out.end(), resp->config.begin());
-                    RCLCPP_INFO(get_logger(), "READ_PARAM(0x10) 成功: 读取 config_t 231B");
+                    mdc::Config cfg;                            // mdc_lib 解析 config_t
+                    if (mdc::parse_config(out, cfg)) {
+                        RCLCPP_INFO(get_logger(),
+                                    "READ_PARAM(0x10) 成功: 读取 config_t 231B "
+                                    "(baud=%u timeout=%u mode=[%u,%u,%u,%u])",
+                                    (unsigned)cfg.baud_rate, (unsigned)cfg.cmd_timeout_ms,
+                                    (unsigned)cfg.control_mode[0], (unsigned)cfg.control_mode[1],
+                                    (unsigned)cfg.control_mode[2], (unsigned)cfg.control_mode[3]);
+                    }
                 } else {
                     RCLCPP_ERROR(get_logger(), "READ_PARAM(0x10) 失败/超时 (r=%d, len=%zu)",
                                  r, out.size());
@@ -254,10 +207,20 @@ public:
                    const std::shared_ptr<ros2_motor_driver::srv::SetConfig::Request> req,
                    const std::shared_ptr<ros2_motor_driver::srv::SetConfig::Response> resp) {
                 std::vector<uint8_t> d(req->config.begin(), req->config.end());
-                int r = send_cmd_wait_reply(0x11, d, 2000, nullptr);  // WRITE_PARAM
+                mdc::Config cfg;
+                if (!mdc::parse_config(d, cfg)) {   // mdc_lib 校验 231B config_t
+                    resp->success = false;
+                    RCLCPP_ERROR(get_logger(),
+                                 "set_config: config 长度非法 (%zu, 期望 231B)", d.size());
+                    return;
+                }
+                // 往返无损重打包 (受保护区置 0, 设备写入时自动还原), 再交给 mdc_lib 打包 0x11 帧
+                int r = send_frame_wait_reply(mdc::MD_CMD_WRITE_PARAM,
+                                              mdc::bin_write_param(mdc::pack_config(cfg)),
+                                              2000, nullptr);   // WRITE_PARAM (0x11)
                 resp->success = (r == REPLY_ACK_OK);
                 RCLCPP_INFO(get_logger(), "WRITE_PARAM(0x11) %s",
-                            resp->success ? "成功 (仅 RAM, 需 /save 持久化)" : "失败/超时");
+                            resp->success ? "成功 (仅 RAM, 需 save_config 服务持久化)" : "失败/超时");
             });
 
         save_config_srv_ = create_service<ros2_motor_driver::srv::SaveConfig>(
@@ -265,9 +228,11 @@ public:
             [this](const std::shared_ptr<rmw_request_id_t> /*req_id*/,
                    const std::shared_ptr<ros2_motor_driver::srv::SaveConfig::Request> /*req*/,
                    const std::shared_ptr<ros2_motor_driver::srv::SaveConfig::Response> resp) {
-                int r = send_cmd_wait_reply(0x20, {}, 3000, nullptr); // SAVE_EEPROM
+                // SAVE_EEPROM (0x20): mdc_lib 打包空帧
+                int r = send_frame_wait_reply(mdc::MD_CMD_SAVE_EEPROM,
+                                              mdc::bin_save(), 3000, nullptr);
                 resp->success = (r == REPLY_ACK_OK);
-                RCLCPP_INFO(get_logger(), "SAVE_EEPROM(0x20) %s (固件写入约 190ms)",
+                RCLCPP_INFO(get_logger(), "SAVE_EEPROM(0x20) %s (写入 EEPROM 约 190ms)",
                             resp->success ? "成功" : "失败/超时");
             });
 
@@ -299,10 +264,11 @@ public:
         shutdown_done_ = true;
 
         if (serial_.is_open()) {
-            write_frame(0x41, {});               // UNSUBSCRIBE (关闭状态上报)
+            const std::vector<uint8_t> unsub = mdc::bin_unsubscribe();  // 0x41 (关闭状态上报)
+            write_bytes(unsub.data(), unsub.size());
             std::this_thread::sleep_for(50ms);
-            std::vector<uint8_t> zero(16, 0);    // 全零 MOTOR_CTRL (四通道停车)
-            write_frame(0x31, zero);
+            const std::vector<uint8_t> zero = mdc::bin_motor_ctrl(0, 0, 0, 0);  // 全零 0x31
+            write_bytes(zero.data(), zero.size());
             RCLCPP_INFO(get_logger(), "已发送 UNSUBSCRIBE(0x41) 与全零 MOTOR_CTRL(0x31)");
         }
 
@@ -316,14 +282,14 @@ private:
     // ================= 启动序列 =================
     void startup()
     {
-        // 1) 文本指令 /priority 1 (USB 主控), 等待回显
+        // 1) 文本指令 /priority 1 (USB 主控), mdc_lib 构造文本行, 等待回显
         if (send_priority_cmd_) {
             {
                 std::lock_guard<std::mutex> lk(text_mtx_);
                 text_rx_.clear();
             }
-            const std::string text = "/priority 1";
-            write_bytes((const uint8_t*)(text + "\n").c_str(), text.size() + 1);
+            const std::string text = mdc::text_build("/priority", "1");  // "/priority 1\n"
+            write_bytes((const uint8_t*)text.data(), text.size());
             RCLCPP_INFO(get_logger(), "已发送文本指令: %s (等待回显...)", text.c_str());
 
             std::unique_lock<std::mutex> lk(text_mtx_);
@@ -338,19 +304,19 @@ private:
                 RCLCPP_INFO(get_logger(), "/priority 1 回显: \"%s\" (USB 主控已就绪)", line.c_str());
             } else {
                 RCLCPP_WARN(get_logger(),
-                            "2s 内未收到 /priority 1 回显, 请检查固件/接线; 已收到: \"%s\"",
+                            "2s 内未收到 /priority 1 回显, 请检查设备/接线; 已收到: \"%s\"",
                             echo.c_str());
             }
         } else {
             RCLCPP_WARN(get_logger(),
                         "send_priority_cmd=false, 跳过 /priority 1; "
-                        "若 USB 非主控, 控制帧 0x31 将被固件仲裁拒绝");
+                        "若 USB 非主控, 控制帧 0x31 将被设备仲裁拒绝");
         }
 
-        // 2) SUBSCRIBE (0x40, interval LE16)
-        std::vector<uint8_t> d;
-        put_le16(d, (uint16_t)status_interval_ms_);
-        int r = send_cmd_wait_reply(0x40, d, 1000, nullptr);
+        // 2) SUBSCRIBE (0x40): mdc_lib 打包 [interval_ms:2B LE]
+        int r = send_frame_wait_reply(mdc::MD_CMD_SUBSCRIBE,
+                                      mdc::bin_subscribe((uint16_t)status_interval_ms_),
+                                      1000, nullptr);
         if (r == REPLY_ACK_OK) {
             RCLCPP_INFO(get_logger(), "SUBSCRIBE(0x40) 成功: 状态上报间隔 %d ms",
                         status_interval_ms_);
@@ -376,7 +342,7 @@ private:
         RCLCPP_INFO(get_logger(), "接收线程退出");
     }
 
-    // 收到原始字节: ① 存入文本回显缓冲 ② 滑动窗口解析二进制帧
+    // 收到原始字节: ① 存入文本回显缓冲 ② 交给 mdc::Parser 流式解析
     void on_rx(const uint8_t* d, size_t n)
     {
         {   // 文本回显缓冲 (供 /priority 1 回显等待, 仅启动阶段使用)
@@ -386,72 +352,51 @@ private:
         }
         text_cv_.notify_all();
 
-        rx_buf_.insert(rx_buf_.end(), d, d + n);
-        parse_frames();
-    }
-
-    // 滑动窗口找 0xAA, 校验 CRC8, 分发完整帧
-    void parse_frames()
-    {
-        while (true) {
-            // 定位 SYNC (0xAA)
-            auto it = std::find(rx_buf_.begin(), rx_buf_.end(), 0xAA);
-            if (it != rx_buf_.begin()) {
-                if (it == rx_buf_.end()) { rx_buf_.clear(); return; }
-                rx_buf_.erase(rx_buf_.begin(), it);   // 丢弃 SYNC 前的噪声字节
-            }
-            if (rx_buf_.size() < 4) return;           // 连最小帧(AA CMD LEN CRC)都不完整
-            size_t len = rx_buf_[2];
-            if (len > 250) {                          // LEN 越界 (规范上限 250): 丢弃该字节重扫
-                rx_buf_.erase(rx_buf_.begin());
-                continue;
-            }
-            size_t total = 4 + len;                   // AA CMD LEN [DATA] CRC
-            if (rx_buf_.size() < total) return;       // 等待完整帧
-            uint8_t c = crc8(&rx_buf_[1], total - 2); // CRC 范围 = CMD+LEN+DATA
-            if (c == rx_buf_[total - 1]) {
-                handle_frame(rx_buf_[1], &rx_buf_[3], len);
-                rx_buf_.erase(rx_buf_.begin(), rx_buf_.begin() + total);
-            } else {
-                // CRC 校验失败: 窗口前进 1 字节重新找 0xAA
-                rx_buf_.erase(rx_buf_.begin());
-            }
+        // mdc_lib 流式解析器: 自动找 0xAA 同步 + CRC8 校验, 文本噪声字节自动丢弃
+        auto frames = parser_.feed(d, n);
+        for (auto& f : frames) {
+            handle_frame(f.first, f.second);
         }
     }
 
-    // ================= 帧分发 =================
-    void handle_frame(uint8_t cmd, const uint8_t* d, size_t len)
+    // ================= 帧分发 (mdc::Parser 输出完整帧后) =================
+    void handle_frame(uint8_t cmd, const std::vector<uint8_t>& payload)
     {
-        if (cmd == 0xF0) {                    // STATUS_REPORT: 主动推送
-            handle_status(d, len);
-        } else if (cmd == 0xF1 || cmd == 0xF2) {  // DETECT_REPORT / SBUS_DATA: 未启用, 忽略
-            RCLCPP_DEBUG(get_logger(), "忽略主动上报帧 CMD=0x%02X LEN=%zu", cmd, len);
-        } else if (len == 1) {                // ACK 帧: 0xAA CMD 0x01 err CRC
-            handle_ack(cmd, d[0]);
-        } else if (cmd == 0x10 && len == 231) {   // READ_PARAM 应答: config_t 231B
-            handle_data_reply(d, len);
+        if (cmd == mdc::MD_CMD_STATUS_REPORT) {               // 0xF0: 设备主动推送
+            handle_status(payload);
+        } else if (cmd == mdc::MD_CMD_DETECT_REPORT ||
+                   cmd == mdc::MD_CMD_SBUS_DATA) {            // 0xF1/0xF2: 未启用, 忽略
+            RCLCPP_DEBUG(get_logger(), "忽略主动上报帧 CMD=0x%02X LEN=%zu", cmd, payload.size());
+        } else if (payload.size() == 1) {                     // ACK 帧: DATA = [err]
+            mdc::Ack ack;
+            if (mdc::parse_ack(payload, ack)) handle_ack(cmd, ack.err);
+        } else if (cmd == mdc::MD_CMD_READ_PARAM &&
+                   payload.size() == mdc::MD_CONFIG_SIZE) {   // READ_PARAM 应答: config_t 231B
+            handle_data_reply(payload);
         } else {
-            RCLCPP_WARN(get_logger(), "未识别帧 CMD=0x%02X LEN=%zu", cmd, len);
+            RCLCPP_WARN(get_logger(), "未识别帧 CMD=0x%02X LEN=%zu", cmd, payload.size());
         }
     }
 
-    // 0xF0 STATUS_REPORT: 常规 56B / 扩展 72B (rpm_raw 追加在 rpm 之后)
-    void handle_status(const uint8_t* d, size_t len)
+    // 0xF0 STATUS_REPORT: mdc_lib 解析 (常规 56B / 扩展 72B 自动兼容)
+    void handle_status(const std::vector<uint8_t>& payload)
     {
-        if (len != 56 && len != 72) {
-            RCLCPP_WARN(get_logger(), "STATUS_REPORT 长度异常 %zu (期望 56/72)", len);
+        mdc::Status st;
+        if (!mdc::parse_status(payload, st)) {
+            RCLCPP_WARN(get_logger(), "STATUS_REPORT 解析失败 (len=%zu, 期望 56/72)",
+                        payload.size());
             return;
         }
         ros2_motor_driver::msg::MotorStatus msg;
         msg.header.stamp = now();
         msg.header.frame_id = "motor_driver";
         for (int i = 0; i < 4; i++) {
-            msg.enc[i] = (int32_t)get_le32(d + 4 * i);           // 编码器累计脉冲
-            msg.tgt[i] = get_le32f(d + 16 + 4 * i);              // 当前目标值 (float LE)
-            msg.rpm[i] = (int32_t)get_le32(d + 32 + 4 * i);      // 滤波后转速
+            msg.enc[i] = st.enc[i];          // 编码器累计脉冲
+            msg.tgt[i] = st.tgt[i];          // 当前目标值 (float)
+            msg.rpm[i] = st.rpm[i];          // 滤波后转速
         }
-        msg.sbus_frame_cnt = get_le32(d + 48);
-        msg.sbus_ok_cnt    = get_le32(d + 52);
+        msg.sbus_frame_cnt = st.sbus_frame_cnt;
+        msg.sbus_ok_cnt    = st.sbus_ok_cnt;
         status_pub_->publish(msg);
     }
 
@@ -461,7 +406,7 @@ private:
         {
             std::lock_guard<std::mutex> lk(cmd_mtx_);
             if (cmd == pending_cmd_) {
-                reply_kind_ = (err == 0x00) ? REPLY_ACK_OK : REPLY_ACK_FAIL;
+                reply_kind_ = (err == mdc::MD_ERR_OK) ? REPLY_ACK_OK : REPLY_ACK_FAIL;
                 reply_received_ = true;
             } else {
                 RCLCPP_DEBUG(get_logger(), "收到未等待的 ACK: CMD=0x%02X err=0x%02X", cmd, err);
@@ -470,13 +415,13 @@ private:
         ack_cv_.notify_all();
     }
 
-    // 数据应答 (如 0x10 → 231B)
-    void handle_data_reply(const uint8_t* d, size_t len)
+    // 数据应答 (如 0x10 → 231B config_t)
+    void handle_data_reply(const std::vector<uint8_t>& data)
     {
         {
             std::lock_guard<std::mutex> lk(cmd_mtx_);
-            if (pending_cmd_ == 0x10) {
-                reply_data_.assign(d, d + len);
+            if (pending_cmd_ == mdc::MD_CMD_READ_PARAM) {
+                reply_data_ = data;
                 reply_kind_ = REPLY_DATA;
                 reply_received_ = true;
             }
@@ -491,16 +436,11 @@ private:
         return serial_.write(d, n) == (ssize_t)n;
     }
 
-    bool write_frame(uint8_t cmd, const std::vector<uint8_t>& data)
-    {
-        auto f = build_frame(cmd, data);
-        return write_bytes(f.data(), f.size());
-    }
-
-    // 发送命令并等待应答 (ACK 或数据帧), 串口命令串行化 (一次一个在途命令)
+    // 发送 mdc_lib 打包好的整帧并等待应答 (ACK 或数据帧),
+    // 串口命令串行化 (一次一个在途命令)。
     // 返回: REPLY_ACK_OK / REPLY_ACK_FAIL / REPLY_DATA / -1 (超时或 IO 错误)
-    int send_cmd_wait_reply(uint8_t cmd, const std::vector<uint8_t>& data,
-                            int timeout_ms, std::vector<uint8_t>* out)
+    int send_frame_wait_reply(uint8_t cmd, const std::vector<uint8_t>& frame,
+                              int timeout_ms, std::vector<uint8_t>* out)
     {
         if (!serial_.is_open()) return -1;
         {
@@ -510,7 +450,7 @@ private:
             reply_kind_ = REPLY_NONE;
             reply_data_.clear();
         }
-        if (!write_frame(cmd, data)) {
+        if (!write_bytes(frame.data(), frame.size())) {
             std::lock_guard<std::mutex> lk(cmd_mtx_);
             pending_cmd_ = 0;
             return -1;
@@ -527,7 +467,7 @@ private:
     // ================= /motor_cmd 订阅回调 =================
     void motor_cmd_cb(const ros2_motor_driver::msg::MotorCmd::SharedPtr msg)
     {
-        // 30Hz 限流: 高于 30Hz 的发布被跳过, 只发送最新值 (固件按 /timeout 超时保护)
+        // 30Hz 限流: 高于 30Hz 的发布被跳过, 只发送最新值 (设备按 /timeout 超时保护)
         auto now_t = std::chrono::steady_clock::now();
         if (now_t - last_ctrl_send_ < 33ms) {
             if (!throttle_warned_) {
@@ -540,11 +480,11 @@ private:
         throttle_warned_ = false;
         last_ctrl_send_ = now_t;
 
-        std::vector<uint8_t> d;
-        for (int i = 0; i < 4; i++) {
-            put_le32(d, (uint32_t)msg->target[i]);   // int32 LE
-        }
-        if (!write_frame(0x31, d)) {                 // MOTOR_CTRL (核心控制帧)
+        // mdc_lib 打包 0x31 MOTOR_CTRL [m1~m4: 4×int32 LE] (核心控制帧)
+        const std::vector<uint8_t> frame =
+            mdc::bin_motor_ctrl(msg->target[0], msg->target[1],
+                                msg->target[2], msg->target[3]);
+        if (!write_bytes(frame.data(), frame.size())) {
             RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000, "串口写 0x31 失败");
         }
     }
@@ -585,8 +525,8 @@ private:
     std::condition_variable text_cv_;
     std::string text_rx_;
 
-    // 二进制帧解析缓冲
-    std::vector<uint8_t> rx_buf_;
+    // mdc_lib 流式解析器 (仅在接收线程访问)
+    mdc::Parser parser_;
 
     // 0x31 控制帧限流
     std::chrono::steady_clock::time_point last_ctrl_send_{};

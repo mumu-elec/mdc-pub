@@ -3,15 +3,17 @@
 """
 04_motor_control — 实时电机控制例程
 ====================================
-以固定周期连续发送 0x31 MOTOR_CTRL 帧（四通道 int32 目标值），带斜坡平滑
-（每次发送向目标逼近 --ramp 步长）。运行中键盘控制：
+以固定周期连续发送 0x31 MOTOR_CTRL 帧（mdc_lib.md_bin_motor_ctrl 打包，
+四通道 int32 目标值），带斜坡平滑（每次发送向目标逼近 --ramp 步长）。
+运行中键盘控制：
     '+' 增大目标    '-' 减小目标    '0' 目标清零    'q' 退出（退出前发送全零归零）
 
 控制目标含义随通道控制模式（协议规范 §3.3）：
     open  = PWM（±1000）；speed = RPM；pos = 0.1°（±3600 = ±360.0°）
 
-启动时自动发送文本指令 `/priority 1` 并等待回显：上位机（USB）做实时控制
-必须获得控制仲裁优先权，否则 0x31 控制帧可能因 USART2 优先而被拒绝（规范 §1）。
+启动时自动发送文本指令 /priority 1（mdc_lib.md_text_build 构造）并等待回显：
+USB 主控（PC）做实时控制必须获得控制仲裁优先权，否则 0x31 控制帧
+可能因 USART2 优先而被拒绝（规范 §1）。
 
 用法：
     python motor_control.py --port COM5 --mode open  --ch 1 --target 300
@@ -27,14 +29,20 @@
 """
 
 import argparse
-import os
-import struct
 import sys
 import time
 
 import serial
 
+# 加载本仓库 mdc_lib（正式工程：复制 mdc_lib/python/mdc_lib.py 到项目目录即可）
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "mdc_lib", "python"))
+import mdc_lib
+
 BAUDRATE = 2000000
+
+# 各模式目标值限幅（speed 模式无限幅，由固件/PID 约束）
+LIMIT = {"open": 1000, "speed": None, "pos": 3600}
 
 
 def setup_console():
@@ -44,29 +52,6 @@ def setup_console():
             s.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-
-# 二进制帧常量（协议规范 §3）
-SYNC = 0xAA
-CMD_MOTOR_CTRL = 0x31
-
-# 各模式目标值限幅
-LIMIT = {"open": 1000, "speed": None, "pos": 3600}
-
-
-def crc8(data):
-    """CRC8-ATM：多项式 0x07，初值 0，范围 CMD+LEN+DATA（不含 SYNC）。"""
-    c = 0
-    for b in data:
-        c ^= b
-        for _ in range(8):
-            c = ((c << 1) ^ 0x07) & 0xFF if (c & 0x80) else (c << 1) & 0xFF
-    return c
-
-
-def build_frame(cmd, data=b""):
-    """组帧：[0xAA, cmd, len, data..., crc8]"""
-    body = bytes([cmd, len(data)]) + data
-    return bytes([SYNC]) + body + bytes([crc8(body)])
 
 
 class KeyReader:
@@ -99,7 +84,7 @@ class KeyReader:
 
 
 class MotorController:
-    """实时控制循环：周期发送 0x31 帧 + 斜坡平滑 + 键盘调速。"""
+    """实时控制循环：mdc_lib 打包 0x31 帧 + 斜坡平滑 + 键盘调速。"""
 
     def __init__(self, port, mode, ch, target, interval_ms, ramp, step):
         self.mode = mode
@@ -114,10 +99,10 @@ class MotorController:
         self.ser = serial.Serial(port, BAUDRATE, timeout=0.05)
         self.ser.reset_input_buffer()
 
-    # ── 文本指令（用于 /priority 1）──────────────────────
-    def send_text(self, line):
-        """发送一行文本指令并等待回显（读取到“安静”为止）。"""
-        self.ser.write(line.encode("ascii") + b"\n")
+    # ── 文本指令（mdc_lib 构造，用于 /priority 1）────────
+    def send_text(self, line_bytes):
+        """发送一条 mdc_lib 打包的文本指令（bytes，含 \\n）并等待回显。"""
+        self.ser.write(line_bytes)
         echo = b""
         last = time.monotonic()
         deadline = time.monotonic() + 0.8
@@ -130,11 +115,10 @@ class MotorController:
                 break
         return echo.decode("utf-8", errors="replace")
 
-    # ── 二进制控制帧 ─────────────────────────────────────
+    # ── 二进制控制帧（mdc_lib 打包 0x31）─────────────────
     def send_ctrl(self, targets):
-        """发送 0x31 MOTOR_CTRL 帧（4×int32 LE）。"""
-        data = struct.pack("<4i", *[int(v) for v in targets])
-        self.ser.write(build_frame(CMD_MOTOR_CTRL, data))
+        """发送 0x31 MOTOR_CTRL 帧：mdc_lib.md_bin_motor_ctrl 打包（4×int32 LE）。"""
+        self.ser.write(mdc_lib.md_bin_motor_ctrl(*[int(v) for v in targets]))
 
     def clamp(self, v):
         """按模式限幅；speed 模式无限幅（由固件/PID 约束）。"""
@@ -156,7 +140,7 @@ class MotorController:
 
         # 文本指令：USB 主控（协议规范 §1 控制优先级）
         print("\n>>> /priority 1")
-        echo = self.send_text("/priority 1")
+        echo = self.send_text(mdc_lib.md_text_build("/priority", "1"))
         if echo.strip():
             print(echo.rstrip())
         print("说明: /priority 1 使 USB 端口获得控制仲裁优先权，"
@@ -166,7 +150,7 @@ class MotorController:
         try:
             next_tick = time.monotonic()
             while True:
-                # 斜坡逼近并发送
+                # 斜坡逼近并发送（mdc_lib 打包 0x31 帧）
                 cur = self.ramp_step()
                 targets = [0, 0, 0, 0]
                 targets[self.ch] = int(round(cur))

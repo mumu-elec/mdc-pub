@@ -9,6 +9,9 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# mdc_lib（协议打包/解析，header-only）：本仓库内直接引用
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../mdc_lib/cpp)
+
 find_package(Threads REQUIRED)
 
 add_executable(motor_control main.cpp serial_port.cpp)
