@@ -1,4 +1,4 @@
-# 02_text_commands — 文本指令交互终端
+﻿# 02_text_commands — 文本指令交互终端
 
 ## 功能
 
@@ -19,8 +19,8 @@
 
 mdc_lib 是 Motor Driver Controller 的**通用调用库**：文本指令打包（`/cmd args\n`）与二进制协议打包/解析全部由库完成，**串口收发由本工程自行实现**（`serial_port.h/.cpp`）。
 
-- **本仓库内可直接构建**：本目录 `CMakeLists.txt` 已通过 `include_directories` 指向 `../../../mdc_lib/cpp`。
-- **正式工程接入**：把 `mdc_lib/cpp/mdc_lib.hpp` 复制到工程 include 目录，`#include "mdc_lib.hpp"` 即可。
+- **开箱即用**：`mdc_lib.hpp` 已随例程内置（本目录），`#include "mdc_lib.hpp"` 直接使用，无需任何额外配置。
+- **更新库版本**：如需更新，用 `../../../mdc_lib/cpp/mdc_lib.hpp` 覆盖本目录的 `mdc_lib.hpp` 即可。
 
 ## mdc_lib 调用指南
 
@@ -73,13 +73,13 @@ cl /std:c++17 /EHsc /I..\..\..\mdc_lib\cpp main.cpp serial_port.cpp /Fe:text_com
 ### Windows — MinGW / MSYS2 g++
 
 ```bat
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -o text_commands.exe
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -o text_commands.exe
 ```
 
 ### Linux — g++ 或 CMake
 
 ```bash
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -o text_commands
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -o text_commands
 
 # 或 CMake（include_directories 已配置，直接构建）：
 cmake -B build && cmake --build build

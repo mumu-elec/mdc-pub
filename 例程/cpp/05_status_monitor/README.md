@@ -1,4 +1,4 @@
-# 05_status_monitor — 状态订阅监控
+﻿# 05_status_monitor — 状态订阅监控
 
 ## 功能
 
@@ -21,8 +21,8 @@
 
 mdc_lib 是 Motor Driver Controller 的**通用调用库**：二进制命令打包（`bin_subscribe` / `bin_unsubscribe`）、流式帧解析（`Parser`）、状态帧解析（`parse_status`，56B/72B 自动兼容）全部由库完成。**串口收发由本工程自行实现**（`serial_port.h/.cpp`）。
 
-- **本仓库内可直接构建**：本目录 `CMakeLists.txt` 已通过 `include_directories` 指向 `../../../mdc_lib/cpp`。
-- **正式工程接入**：把 `mdc_lib/cpp/mdc_lib.hpp` 复制到工程 include 目录，`#include "mdc_lib.hpp"` 即可。
+- **开箱即用**：`mdc_lib.hpp` 已随例程内置（本目录），`#include "mdc_lib.hpp"` 直接使用，无需任何额外配置。
+- **更新库版本**：如需更新，用 `../../../mdc_lib/cpp/mdc_lib.hpp` 覆盖本目录的 `mdc_lib.hpp` 即可。
 
 ## mdc_lib 调用指南
 
@@ -77,13 +77,13 @@ cl /std:c++17 /EHsc /I..\..\..\mdc_lib\cpp main.cpp serial_port.cpp /Fe:status_m
 ### Windows — MinGW / MSYS2 g++（winpthreads 已默认链接）
 
 ```bat
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -o status_monitor.exe
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -o status_monitor.exe
 ```
 
 ### Linux — g++（需要 -pthread）或 CMake
 
 ```bash
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -pthread -o status_monitor
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -pthread -o status_monitor
 
 # 或 CMake（自动链接 Threads）：
 cmake -B build && cmake --build build

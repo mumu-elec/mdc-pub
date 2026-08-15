@@ -33,14 +33,9 @@ catkin_package(
 
 include_directories(${catkin_INCLUDE_DIRS})
 
-# ── mdc_lib 通用调用库（header-only，命名空间 mdc，零第三方依赖）─────────────
-# 方式一（仓库内构建，开箱即用）：直接引用仓库内 mdc_lib/cpp/mdc_lib.hpp
-#   （相对本包 CMakeLists.txt 的 ../../../mdc_lib/cpp）。
-# 方式二（独立使用本包）：把 mdc_lib/cpp/mdc_lib.hpp 复制到本包 include/
-#   目录，并把下面的 include_directories 改为：
-#     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-# ---------------------------------------------------------------------------
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../mdc_lib/cpp)
+# mdc_lib 通用调用库（header-only，命名空间 mdc，零第三方依赖）
+# mdc_lib.hpp 已内置在本包 include/ 目录
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # 驱动节点（串口 termios 收发 + mdc_lib 打包/解析 + 话题/服务）
 add_executable(motor_driver_node src/motor_driver_node.cpp)

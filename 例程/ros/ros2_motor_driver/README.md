@@ -1,4 +1,4 @@
-# ros2_motor_driver — Motor Driver Controller 的 ROS2 (Humble) 驱动包
+﻿# ros2_motor_driver — Motor Driver Controller 的 ROS2 (Humble) 驱动包
 
 ## 功能
 
@@ -31,21 +31,9 @@
 
 - **系统**：Ubuntu 22.04 + **ROS2 Humble**（`ros-humble-desktop`）
 - **ROS 依赖**：`rclcpp`、`std_msgs`、`rosidl_default_generators`（见 `package.xml`）
-- **mdc_lib**：`mdc_lib/cpp/mdc_lib.hpp`（header-only、命名空间 `mdc`、零第三方依赖）。协议打包/解析全部由库完成，节点内不包含任何协议实现代码。
+- **mdc_lib**：`include/mdc_lib.hpp`（header-only、命名空间 `mdc`、零第三方依赖）。协议打包/解析全部由库完成，节点内不包含任何协议实现代码。
 
-**mdc_lib 引用两种配置方式：**
-
-1. **仓库内构建（开箱即用）**：`CMakeLists.txt` 已添加 include 路径
-   ```cmake
-   include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../mdc_lib/cpp)
-   ```
-   直接引用仓库内的 `mdc_lib.hpp`，无需任何拷贝。
-
-2. **独立使用本包**：把 `mdc_lib/cpp/mdc_lib.hpp` 复制到本包 `include/` 目录，
-   并将 `CMakeLists.txt` 中的 include 路径改为：
-   ```cmake
-   include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-   ```
+**mdc_lib.hpp 已随本包内置（`include/mdc_lib.hpp`），开箱即用**：`CMakeLists.txt` 的 include 路径已指向本包 `include/` 目录，无需任何拷贝或额外配置；如需更新库版本，用 `../../../mdc_lib/cpp/mdc_lib.hpp` 覆盖本包 `include/mdc_lib.hpp` 即可。
 
 ## mdc_lib 调用指南
 

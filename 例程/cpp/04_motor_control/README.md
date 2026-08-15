@@ -1,4 +1,4 @@
-# 04_motor_control — 实时电机控制
+﻿# 04_motor_control — 实时电机控制
 
 ## 功能
 
@@ -22,8 +22,8 @@
 
 mdc_lib 是 Motor Driver Controller 的**通用调用库**：控制帧打包（`bin_motor_ctrl`，四通道 int32 小端由库处理）与文本指令打包（`text_build` / `text_mode`）全部由库完成，**串口收发由本工程自行实现**（`serial_port.h/.cpp`）。
 
-- **本仓库内可直接构建**：本目录 `CMakeLists.txt` 已通过 `include_directories` 指向 `../../../mdc_lib/cpp`。
-- **正式工程接入**：把 `mdc_lib/cpp/mdc_lib.hpp` 复制到工程 include 目录，`#include "mdc_lib.hpp"` 即可。
+- **开箱即用**：`mdc_lib.hpp` 已随例程内置（本目录），`#include "mdc_lib.hpp"` 直接使用，无需任何额外配置。
+- **更新库版本**：如需更新，用 `../../../mdc_lib/cpp/mdc_lib.hpp` 覆盖本目录的 `mdc_lib.hpp` 即可。
 
 ## mdc_lib 调用指南
 
@@ -70,13 +70,13 @@ cl /std:c++17 /EHsc /I..\..\..\mdc_lib\cpp main.cpp serial_port.cpp /Fe:motor_co
 ### Windows — MinGW / MSYS2 g++（winpthreads 已默认链接）
 
 ```bat
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -o motor_control.exe
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -o motor_control.exe
 ```
 
 ### Linux — g++（需要 -pthread）或 CMake
 
 ```bash
-g++ -std=c++17 -O2 -I../../../mdc_lib/cpp main.cpp serial_port.cpp -pthread -o motor_control
+g++ -std=c++17 -O2 main.cpp serial_port.cpp -pthread -o motor_control
 
 # 或 CMake（自动链接 Threads）：
 cmake -B build && cmake --build build
