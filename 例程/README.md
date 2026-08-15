@@ -29,15 +29,17 @@
 
 ### 2.2 各语言引用 mdc_lib 的方式
 
-| 语言 | 引用方式 |
-|------|---------|
-| Python | 复制 `mdc_lib/python/mdc_lib.py` 到工程目录，`import mdc_lib` |
-| C++ | 复制 `mdc_lib/cpp/mdc_lib.hpp` 到工程，`#include "mdc_lib.hpp"`（命名空间 `mdc`） |
-| MicroPython | 把 `mdc_lib/<平台>/micropython/mdc_lib.py` 上传到设备，`import mdc_lib` |
-| Arduino | 把 `mdc_lib/<平台>/arduino/mdc_lib.h/.cpp` 复制到 sketch 目录，`#include "mdc_lib.h"` |
-| STM32 / ESP-IDF / RP2040 SDK / 51 | 把对应 `mdc_lib/<平台>/.../mdc_lib.h/.c` 加入工程，`#include "mdc_lib.h"` |
+**本仓库内的例程已把需要的 mdc_lib 库文件内置在各自文件夹中，开箱即用**（例程目录下的 `mdc_lib.py` / `mdc_lib.hpp` / `mdc_lib.h`+`mdc_lib.c|.cpp` 即为所需库文件）。
 
-> 本仓库内的例程已配好相对路径引用，直接在仓库内即可运行；正式工程请按上表把库文件复制进你的项目。
+| 语言 | 例程内的库文件 |
+|------|---------------|
+| Python | 各例程目录下 `mdc_lib.py`，代码直接 `import mdc_lib` |
+| C++ | 各例程目录下 `mdc_lib.hpp`，代码 `#include "mdc_lib.hpp"`（命名空间 `mdc`） |
+| MicroPython | 各例程目录下 `mdc_lib.py`，上传整个例程文件夹到设备即可 |
+| Arduino | 各例程目录下 `mdc_lib.h` + `mdc_lib.cpp`，Arduino IDE 打开 `.ino` 自动编译 |
+| STM32 / 51 | 各例程目录下 `mdc_lib.h` + `mdc_lib.c`，加入工程编译即可 |
+
+> **升级库版本：** 用 [`../mdc_lib/`](../mdc_lib/README.md) 中对应平台的同名文件覆盖例程内的库文件即可。
 
 ### 2.3 最小调用示例
 
@@ -142,7 +144,7 @@ ser.write(mdc_lib.md_bin_write_param(cfg)) # 打包 WRITE_PARAM 帧并发送
 | 控制帧无效 | `/priority 1`（USB 主控）或确认 `/timeout` 未归零 |
 | CRC 校验失败 | mdc_lib 已内置校验；确认收到的字节未经其他程序截断 |
 | 版本不匹配 | 固件 SW_MAJOR 需与上位机协议版本 D 一致 |
-| 找不到 mdc_lib | 按 §2.2 把对应平台库文件复制进工程 |
+| 找不到 mdc_lib | 例程目录下的 `mdc_lib.py/hpp/h/c` 即库文件；若被删除，从 `../mdc_lib/` 对应平台目录恢复 |
 
 ---
 
