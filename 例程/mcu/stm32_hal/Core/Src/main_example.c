@@ -2,19 +2,18 @@
  * ============================================================================
  *  main_example.c — STM32 HAL 主循环集成示例（F103C8T6，F4 用法相同）
  * ============================================================================
- *  本文件不是完整工程，而是演示如何把 motor_driver.h/.c 集成进
- *  CubeMX 生成的 main.c。把下面的关键片段合并进你的 main.c 即可：
+ *  本文件不是完整工程，而是演示如何把 mdc_lib（通用调用库）集成进
+ *  CubeMX 生成的 main.c。把下面的关键片段合并进你的 main.c 即可。
  *
  *  【CubeMX 需要配置的内容】
- *    1. USARTx（例程用 USART2，对应引脚 PA2=TX、PA3=RX）：115200-8N1，
- *       使能 NVIC（USART2 global interrupt），其余默认。
+ *    1. USART2（PA2=TX、PA3=RX）：115200-8N1，使能 NVIC
+ *       （USART2 global interrupt），其余默认。
  *    2. 时钟：HSE 8MHz → PLL → SYSCLK 72MHz（F1 蓝板常见配置）。
- *    3. 建议使能一个 1ms 时基（HAL_GetTick 默认 SysTick 1ms，无需额外配置）。
+ *    3. 建议使能 1ms 时基（HAL_GetTick 默认 SysTick 1ms，无需额外配置）。
  *
  *  【需要加入工程的源文件】
- *    - Core/Inc/motor_driver.h   （加入 Include Paths）
- *    - Core/Src/motor_driver.c
- *    - 本文件中的函数/回调合并到 main.c（或单独建 motor_driver_app.c）
+ *    - mdc_lib/stm32/hal/mdc_lib.h   → 工程 Core/Inc/（加入 Include Paths）
+ *    - mdc_lib/stm32/hal/mdc_lib.c   → 工程 Core/Src/（加入源文件组）
  *
  *  【接线】
  *    STM32 PA2 (USART2_TX) → 控制板 RC 信号（RC RX）
@@ -25,25 +24,36 @@
  *    /uart2 115200 0 uart
  *    默认控制优先级 USART2 优先（/priority 0）→ 本例程 0x31 控制帧天然生效。
  *
+ *  协议层全部由 mdc_lib 完成（打包/解析），本文件只负责串口收发：
+ *    - 发送：md_bin_* / md_text_* 返回「要发送的字节」，交给 HAL_UART_Transmit
+ *    - 接收：USART2 接收中断逐字节喂 md_parser_feed()（自动找 0xAA + CRC 校验），
+ *            收到 0xF0 用 md_parse_status() 解析；ACK 用 md_parse_ack() 解析
+ *
  *  例程行为：
- *    - 上电后每 50ms 发送一帧 0x31（ch1=200RPM、ch2=-200RPM、ch3/ch4=0）
- *    - 订阅状态上报（SUBSCRIBE 100ms），收到 0xF0 解析并打印前两路
- *    - USART2 接收中断逐字节喂给 md_rx_byte() 做滑动窗口帧解析
+ *    - 上电用 md_bin_subscribe(100) 订阅状态上报
+ *    - 主循环每 50ms 用 md_bin_motor_ctrl 发送一帧 0x31
+ *      （ch1=200、ch2=-200、ch3/ch4=0，单位取决于各通道模式）
+ *    - USART2 接收中断逐字节喂 md_parser_feed，0xF0 解析结果在主循环打印
  * ============================================================================
  */
 #include "main.h"                /* CubeMX 生成 */
-#include "motor_driver.h"
+#include "mdc_lib.h"
 #include <stdio.h>
-#include <string.h>
 
 extern UART_HandleTypeDef huart2;
 
-static uint8_t s_rx_byte;        /* 单字节接收缓冲 */
+static md_parser_t g_parser;     /* 流式解析器状态（全局/静态区，避免占栈） */
+static uint8_t     s_rx_byte;    /* 单字节接收缓冲 */
+
+/* 0xF0 / ACK 解析结果（中断写入，主循环打印，避免在中断里做串口输出） */
+static md_status_t g_status;     /* 最近一次 0xF0 解析结果 */
+static md_ack_t    g_ack;        /* 最近一次 ACK 解析结果 */
+static uint8_t     g_frame_kind; /* 0=无新帧 1=0xF0 2=ACK */
 
 /* ============================================================================
- * 依赖注入回调：协议封装层通过此函数发送数据到 RC 口（USART2）。
+ * 发送辅助：把 mdc_lib 打包结果交给 USART2（用户侧收发）
  * ==========================================================================*/
-void motor_driver_send_uart(uint8_t *buf, uint16_t len)
+static void uart2_send(const uint8_t *buf, uint16_t len)
 {
     HAL_UART_Transmit(&huart2, buf, len, 100);   /* 100ms 超时 */
 }
@@ -60,72 +70,14 @@ int fputc(int ch, FILE *f)
 #endif
 
 /* ============================================================================
- * 0xF0 STATUS_REPORT 解析回调（覆盖 motor_driver.c 中的弱实现，规范 §4）
- *   常规模式 56B：[enc1~4:4×int32 LE][tgt1~4:4×float LE][rpm1~4:4×int32 LE]
- *                [sbus_frame_cnt:4B LE][sbus_ok_cnt:4B LE]
- *   说明：STM32 为小端，memcpy 到对应类型即可；下面给出 int32/float 的
- *         手动小端解析示例（float 位模式直接拷贝）。
- * ==========================================================================*/
-static int32_t get_i32_le(const uint8_t *p)
-{
-    return (int32_t)((uint32_t)p[0] |
-                     ((uint32_t)p[1] << 8) |
-                     ((uint32_t)p[2] << 16) |
-                     ((uint32_t)p[3] << 24));
-}
-
-static float get_f32_le(const uint8_t *p)
-{
-    float f;
-    uint8_t tmp[4];
-
-    tmp[0] = p[0]; tmp[1] = p[1]; tmp[2] = p[2]; tmp[3] = p[3];
-    memcpy(&f, tmp, 4);          /* 小端机直接拷贝位模式 */
-    return f;
-}
-
-void md_on_status_report(const uint8_t *data, uint8_t len)
-{
-    /* 常规模式 56B；扩展模式（DEBUG_SPEED=1）72B */
-    if (len >= 56) {
-        int32_t enc[4], rpm[4];
-        float tgt[4];
-        int i;
-
-        for (i = 0; i < 4; i++) {
-            enc[i] = get_i32_le(data + i * 4);                    /* 0..15  */
-            tgt[i] = get_f32_le(data + 16 + i * 4);               /* 16..31 */
-            rpm[i] = get_i32_le(data + 32 + i * 4);               /* 32..47 */
-        }
-        printf("0xF0 enc=%ld,%ld,%ld,%ld tgt=%.1f,%.1f,%.1f,%.1f rpm=%ld,%ld,%ld,%ld\r\n",
-               (long)enc[0], (long)enc[1], (long)enc[2], (long)enc[3],
-               (double)tgt[0], (double)tgt[1], (double)tgt[2], (double)tgt[3],
-               (long)rpm[0], (long)rpm[1], (long)rpm[2], (long)rpm[3]);
-    }
-}
-
-/* ============================================================================
- * 0x10 READ_PARAM 应答解析骨架（覆盖弱实现，规范 §5，config_t = 231B）
- *   演示读取 3 个字段：baud_rate(offset 11, u32)、cmd_timeout_ms(offset 15, u16)、
- *   control_mode(offset 18, u8)。全量解析请按规范 §5 的偏移表扩展。
- * ==========================================================================*/
-void md_on_read_param(const uint8_t *cfg, uint16_t len)
-{
-    if (len >= 231) {
-        uint32_t baud = (uint32_t)cfg[11] | ((uint32_t)cfg[12] << 8) |
-                        ((uint32_t)cfg[13] << 16) | ((uint32_t)cfg[14] << 24);
-        uint16_t timeout = (uint16_t)(cfg[15] | ((uint16_t)cfg[16] << 8));
-
-        printf("READ_PARAM: baud=%lu timeout=%u mode=0x%02X\r\n",
-               (unsigned long)baud, (unsigned)timeout, (unsigned)cfg[18]);
-    }
-}
-
-/* ============================================================================
  * 主函数示例：合并进 CubeMX 生成的 main()。
  * ==========================================================================*/
 int main(void)
 {
+    uint8_t  buf[32];
+    uint16_t n;
+    uint32_t last_send;
+
     /* ---- CubeMX 生成的初始化（保持原样） ---- */
     HAL_Init();
     SystemClock_Config();          /* CubeMX 生成：72MHz */
@@ -133,37 +85,86 @@ int main(void)
     MX_USART2_UART_Init();         /* 115200-8N1，NVIC 已使能 */
 
     /* ---- 应用初始化 ---- */
-    /* 订阅状态上报：每 100ms 推送一帧 0xF0（需先于接收解析，控制板确认后回 ACK） */
-    md_subscribe(100);
-    /* 可选：请求全部配置（应答 231B 由 md_on_read_param 解析） */
-    /* md_read_param(); */
+    md_parser_init(&g_parser);
+
+    /* 订阅状态上报：每 100ms 推送一帧 0xF0（控制板确认后回 ACK） */
+    n = md_bin_subscribe(100, buf, sizeof(buf));
+    uart2_send(buf, n);
+
+    /* 可选：把 ch1/ch2 切到速度闭环（文本指令由 mdc_lib 构造，自动补 '\n'）：
+     *   char line[32];
+     *   n = md_text_mode(1, "speed", line, sizeof(line));
+     *   uart2_send((const uint8_t *)line, n);
+     *   n = md_text_mode(2, "speed", line, sizeof(line));
+     *   uart2_send((const uint8_t *)line, n);
+     * 也可用 md_text_build 构造任意文本指令：
+     *   n = md_text_build("/speedctrl", "1 0.5 0.02 0.01", line, sizeof(line));
+     */
 
     /* 启动 USART2 单字节接收中断（配合下方 HAL_UART_RxCpltCallback） */
     HAL_UART_Receive_IT(&huart2, &s_rx_byte, 1);
 
-    /* ---- 主循环：每 50ms 发送一帧 0x31 控制帧 ---- */
-    uint32_t last_send = HAL_GetTick();
-    const int32_t targets[4] = { 200, -200, 0, 0 };   /* ch1=200RPM, ch2=-200RPM */
+    /* ---- 主循环：每 50ms 发送一帧 0x31 控制帧（规范 §3.3 需连续发送） ---- */
+    last_send = HAL_GetTick();
 
     while (1)
     {
         if (HAL_GetTick() - last_send >= 50) {
-            md_motor_ctrl(targets);                    /* 连续发送，满足规范 §3.3 */
+            /* 0x31 MOTOR_CTRL：mdc_lib 打包整帧（含 0xAA 同步字 + CRC8）。
+             * 目标值含义取决于各通道模式：开环=PWM(±1000)、速度=RPM、位置=0.1° */
+            n = md_bin_motor_ctrl(200, -200, 0, 0, buf, sizeof(buf));
+            uart2_send(buf, n);
             last_send = HAL_GetTick();
         }
+
+        /* 打印中断里解析好的 0xF0 / ACK（打印走 USART2，可与控制帧共用一根线） */
+        if (g_frame_kind != 0) {
+            if (g_frame_kind == 1) {
+                printf("0xF0 enc=%ld,%ld,%ld,%ld tgt=%.1f,%.1f,%.1f,%.1f rpm=%ld,%ld,%ld,%ld\r\n",
+                       (long)g_status.enc[0], (long)g_status.enc[1],
+                       (long)g_status.enc[2], (long)g_status.enc[3],
+                       (double)g_status.tgt[0], (double)g_status.tgt[1],
+                       (double)g_status.tgt[2], (double)g_status.tgt[3],
+                       (long)g_status.rpm[0], (long)g_status.rpm[1],
+                       (long)g_status.rpm[2], (long)g_status.rpm[3]);
+            } else {
+                printf("ACK cmd=0x%02X err=0x%02X\r\n",
+                       (unsigned)g_ack.cmd, (unsigned)g_ack.err);
+            }
+            g_frame_kind = 0;
+        }
+
         /* 其它业务逻辑放这里 */
     }
 }
 
 /* ============================================================================
- * USART2 接收中断回调：每收到 1 字节喂给滑动窗口帧解析器。
+ * USART2 接收中断回调：每收到 1 字节喂给 mdc_lib 流式解析器。
  * （CubeMX 生成的 stm32f1xx_it.c 中已调用 HAL_UART_IRQHandler，
  *   本回调由 HAL 在中断上下文调用。）
  * ==========================================================================*/
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+    uint8_t cmd;
+    const uint8_t *payload;
+    uint16_t plen;
+
     if (huart->Instance == USART2) {
-        md_rx_byte(s_rx_byte);                 /* 帧解析（含 0xF0 分发） */
+        /* 流式解析：自动找 0xAA 同步 + CRC 校验，完整帧返回 1 */
+        if (md_parser_feed(&g_parser, s_rx_byte, &cmd, &payload, &plen)) {
+            if (cmd == MD_CMD_STATUS_REPORT) {          /* 0xF0 状态上报 */
+                /* payload 指向解析器内部缓冲，必须在下次 feed 前消费：
+                 * 这里立即解析进 g_status，主循环负责打印 */
+                if (md_parse_status(payload, plen, &g_status)) {
+                    g_frame_kind = 1;
+                }
+            } else if (plen == 1) {                     /* ACK 帧（0x40 应答等） */
+                if (md_parse_ack(payload, plen, &g_ack)) {
+                    g_frame_kind = 2;
+                }
+            }
+            /* 其它上报帧（0xF1/0xF2 等）按需扩展 */
+        }
         HAL_UART_Receive_IT(&huart2, &s_rx_byte, 1);   /* 重新挂接接收 */
     }
 }

@@ -1,17 +1,13 @@
-# STM32 HAL 例程 — CubeMX 工程集成（USART 连 RC 口 + 协议封装层）
+# STM32 HAL 例程 — CubeMX 工程集成（USART2 连 RC 口 + mdc_lib 打包/解析）
 
-基于 **STM32F1/F4 + STM32Cube HAL** 的 Motor Driver Controller 上位机例程。例程按 **STM32F103C8T6（蓝板）** 编写，F4 芯片用法完全相同（仅 CubeMX 选型不同）。提供**不依赖具体外设的协议封装层**（纯函数 + 依赖注入回调）与主循环集成示例。
+基于 **STM32F1/F4 + STM32Cube HAL** 的 Motor Driver Controller 单片机例程。例程按 **STM32F103C8T6（蓝板）** 编写，F4 芯片用法完全相同（仅 CubeMX 选型不同）。**协议打包/解析全部由 mdc_lib 完成**（零 HAL 依赖，纯 C），串口收发由本工程实现。
 
 ## 功能
 
-- **协议封装层**（`motor_driver.h/.c`，可直接移植到任意 STM32 工程）：
-  - `md_crc8()`：CRC8（多项式 0x07、初值 0，范围 = CMD+LEN+DATA），按规范 §3.1 移植
-  - `md_build_frame()`：组帧 `[0xAA][CMD][LEN][DATA][CRC8]`
-  - `motor_driver_send_uart(buf, len)`：依赖注入回调，由用户实现（调用 `HAL_UART_Transmit`）
-  - `md_send_text()`、`md_motor_ctrl()`（0x31，int32 小端手动拼装）、`md_subscribe()`（0x40）、`md_read_param()`（0x10）、`md_save_eeprom()`（0x20）
-  - `md_rx_byte()`：滑动窗口帧解析状态机（SYNC→CMD→LEN→DATA→CRC），CRC 通过后自动分发
-  - `md_on_status_report()` / `md_on_read_param()`：**弱实现解析回调骨架**，用户可重写（0xF0 上报、config_t 231B 解析）
-- **主循环示例**（`main_example.c`）：50ms 周期发送 0x31 控制帧、订阅 0xF0 并打印、USART2 接收中断逐字节喂解析器。
+- **主循环实时控制**：每 50ms 用 `md_bin_motor_ctrl` 打包并发送一帧 `0x31 MOTOR_CTRL`（ch1=200、ch2=-200、ch3/ch4=0，满足规范 §3.3「实时控制以 30/50/100ms 间隔连续发送」）。
+- **状态上报解析**：上电用 `md_bin_subscribe(100)` 订阅，USART2 接收中断逐字节喂 `md_parser_feed()`（自动找 0xAA 同步 + CRC 校验）；收到 `0xF0` 用 `md_parse_status()` 解析 enc/tgt/rpm，收到 ACK 用 `md_parse_ack()` 解析，结果在主循环打印（不占用中断上下文）。
+- **文本指令示例**：注释中给出 `md_text_mode` / `md_text_build` 的调用写法（把 ch1/ch2 切到速度闭环、调 PID 等）。
+- 例程不含任何自写的 CRC8 / 组帧 / 帧解析代码——全部由 mdc_lib 提供。
 
 ## 硬件接线（引脚表）
 
@@ -32,7 +28,7 @@ STM32F103C8T6                   Motor Driver Controller
 └──────────────┘                └──────────────────┘
 ```
 
-> 也可以换用其它 USART（如 USART1/PA9、PA10），只需在 CubeMX 里改外设并在 `motor_driver_send_uart` 里换句柄。
+> 也可以换用其它 USART（如 USART1/PA9、PA10），只需在 CubeMX 里改外设，并把 `main_example.c` 中的 `huart2` 换成对应句柄。
 
 ## 控制板预配置
 
@@ -43,8 +39,74 @@ STM32F103C8T6                   Motor Driver Controller
 ```
 
 - 波特率 115200、极性正常、模式 uart（设置后立即生效并应用）。
-- 默认控制优先级 **USART2 优先**（`/priority 0`），因此本例程从 USART2 发出的 0x31 控制帧天然生效；若 USB 上位机同时发控制帧，需注意仲裁（规范 §1、§3.4）。
+- 默认控制优先级 **USART2 优先**（`/priority 0`），因此本例程从 USART2 发出的 0x31 控制帧天然生效；PC 端串口工具同时发控制帧时需注意仲裁（规范 §1、§3.4）。
 - 需要时可用 `/timeout 0` 关闭超时归零保护。
+
+## 依赖与 mdc_lib
+
+本例程依赖 **mdc_lib**（通用调用库，只做打包/解析，不 include 任何 HAL 头文件）。需要两个文件：
+
+- `mdc_lib/stm32/hal/mdc_lib.h`
+- `mdc_lib/stm32/hal/mdc_lib.c`
+
+**加入工程步骤**（在 `release/site/motor_driver_control/` 目录下执行，Windows）：
+
+```
+copy mdc_lib\stm32\hal\mdc_lib.h 例程\mcu\stm32_hal\Core\Inc\
+copy mdc_lib\stm32\hal\mdc_lib.c 例程\mcu\stm32_hal\Core\Src\
+```
+
+然后在 CubeIDE / Keil 中：
+
+1. 把 `Core/Src/mdc_lib.c` 加入源文件组（CubeIDE 会自动扫描 `Core/Src`；Keil 需右键 Source Group → Add Existing Files…）。
+2. 确认 `Core/Inc` 在 Include Paths 中（CubeIDE 默认包含；Keil 在 Options for Target → C/C++ → Include Paths 添加）。
+3. 代码中 `#include "mdc_lib.h"` 即可使用全部 `md_*` API，无需链接任何额外库。
+4. 把 `Core/Src/main_example.c` 中的关键内容**合并进 CubeMX 生成的 `main.c`**（见「开发环境与编译」）。
+
+## mdc_lib 调用指南
+
+本例程用到的 mdc_lib API（签名与 `mdc_lib.h` 一致，C 系输出缓冲形态：返回「写入字节数」，`cap` 不足返回 0；解析函数返回 1/0）：
+
+| API | 用途 | 实际调用 |
+|-----|------|---------|
+| `md_bin_motor_ctrl(t0..t3, out, cap)` | 0x31 四通道控制帧（整帧含 CRC8） | `md_bin_motor_ctrl(200, -200, 0, 0, buf, sizeof(buf))` → 20B |
+| `md_bin_subscribe(ms, out, cap)` | 0x40 订阅状态上报 | `md_bin_subscribe(100, buf, sizeof(buf))` → 6B |
+| `md_text_mode(ch, mode, out, cap)` | 控制模式切换 | `md_text_mode(1, "speed", line, sizeof(line))` → `/mode 1 speed\n` |
+| `md_text_build(cmd, args, out, cap)` | 任意文本指令（自动补 `\n`） | `md_text_build("/speedctrl", "1 0.5 0.02 0.01", line, sizeof(line))` |
+| `md_parser_init(&p)` | 初始化流式解析器 | `md_parser_init(&g_parser)` |
+| `md_parser_feed(&p, byte, &cmd, &payload, &plen)` | 逐字节喂入，完整帧返回 1 | 接收中断里每字节调用 |
+| `md_parse_status(payload, len, &st)` | 解析 0xF0（56B/72B 自动兼容） | 返回 1 后读 `st.enc[]/st.tgt[]/st.rpm[]` |
+| `md_parse_ack(payload, len, &ack)` | 解析 ACK | 返回 1 后读 `ack.cmd / ack.err` |
+
+发送/接收骨架（与例程等价）：
+
+```c
+static md_parser_t g_parser;
+
+/* 发送：库打包 → HAL 串口写出 */
+uint8_t buf[32];
+uint16_t n = md_bin_motor_ctrl(200, -200, 0, 0, buf, sizeof(buf));
+HAL_UART_Transmit(&huart2, buf, n, 100);
+
+/* 接收中断：每字节喂流式解析器 */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    uint8_t cmd; const uint8_t* payload; uint16_t plen;
+    if (huart->Instance == USART2) {
+        if (md_parser_feed(&g_parser, s_rx_byte, &cmd, &payload, &plen)) {
+            if (cmd == MD_CMD_STATUS_REPORT) {          /* 0xF0 */
+                md_status_t st;
+                if (md_parse_status(payload, plen, &st) == 1) {
+                    /* 消费 st.enc[]/st.rpm[]...（payload 在下次 feed 前有效） */
+                }
+            }
+        }
+        HAL_UART_Receive_IT(&huart2, &s_rx_byte, 1);
+    }
+}
+```
+
+> **注意：** `md_parser_feed` 返回 1 时，`payload` 指向解析器内部缓冲，必须在**下一次 feed 之前**消费（例程在中断内立即调用 `md_parse_status` 拷进结构体）。若要跨中断保存原始数据，请 `memcpy` 出来。
 
 ## 开发环境与编译
 
@@ -59,18 +121,19 @@ STM32F103C8T6                   Motor Driver Controller
 4. **时钟**：HSE 8MHz → PLL → SYSCLK 72MHz（CubeMX 自动生成 `SystemClock_Config`）。
 5. 生成代码（Project Manager → Toolchain 选 MDK-ARM 或 STM32CubeIDE）。
 
-### 2. 把协议封装加入工程
+### 2. 把 mdc_lib 加入工程
 
-- 将 `Core/Inc/motor_driver.h` 拷贝到工程 `Core/Inc/`，`Core/Src/motor_driver.c` 拷贝到 `Core/Src/`（或任意目录后在工程设置里加入 Include Paths）。
-- 将 `main_example.c` 中的关键内容合并进 CubeMX 生成的 `main.c`：
-  - 包含 `motor_driver.h`
-  - 定义 `motor_driver_send_uart()`（依赖注入回调）
-  - 合并（可选重写）`md_on_status_report()` / `md_on_read_param()`
-  - 主循环里加 50ms 发送 0x31 的逻辑
-  - 加 `HAL_UART_RxCpltCallback()` 接收中断回调
+按上文「依赖与 mdc_lib」把 `mdc_lib.h` / `mdc_lib.c` 放入工程并加入 Include Paths。
+
+### 3. 合并 main_example.c 到 main.c
+
+- 在 `main.c` 里 `#include "mdc_lib.h"`。
+- 在 `main()` 里：`md_parser_init(&g_parser)` → `md_bin_subscribe` → `HAL_UART_Receive_IT` → 主循环 50ms 发 0x31。
+- 添加 `HAL_UART_RxCpltCallback()`（CubeMX 生成的 `stm32f1xx_it.c` 已调用 `HAL_UART_IRQHandler`，HAL 会自动回调本函数）。
+- 添加 0xF0/ACK 打印逻辑（`g_status` / `g_ack` / `g_frame_kind` 三个全局变量）。
 - 若用 Keil MDK：建议勾选 **Target → Code Generation → Use MicroLIB**（配合示例中的 `fputc` 重定向即可用 `printf`）。
 
-### 3. 编译烧录
+### 4. 编译烧录
 
 - MDK：F7 编译 → F8 下载（需 ST-Link / DAP-Link + 对应 Flash 算法）。
 - STM32CubeIDE：Build → Run。
@@ -78,40 +141,29 @@ STM32F103C8T6                   Motor Driver Controller
 
 ## 运行与操作说明
 
-1. 上电后，STM32 每 50ms 向控制板发送一帧 0x31（ch1=200、ch2=-200，单位取决于各通道模式），并订阅了 100ms 状态上报。
-2. 若已配置速度闭环（`/mode 1 speed`、`/mode 2 speed`），两个电机应分别以 200 / -200 RPM 转动。
-3. 控制板每 100ms 推送一帧 0xF0，STM32 解析后通过 `printf` 打印 enc/tgt/rpm 前四路（需接 USART2 到串口工具查看，或自行改打印通道）。
-4. 修改目标值：直接改 `main_example.c` 里的 `targets[4]` 数组后重新编译烧录；或把目标值改成全局变量，通过其它交互方式（按键/上位机）在线修改。
+1. 上电后，STM32 发送 `md_bin_subscribe(100)` 订阅状态上报，并每 50ms 发送一帧 0x31（ch1=200、ch2=-200，单位取决于各通道模式）。
+2. 若已把 ch1/ch2 配置为速度闭环（取消注释 `md_text_mode(1,"speed")` / `md_text_mode(2,"speed")`，或在控制板执行 `/mode 1 speed`、`/mode 2 speed`），两个电机应分别以 200 / -200 RPM 转动。
+3. 控制板每 100ms 推送一帧 0xF0，STM32 解析后通过 `printf` 打印 `0xF0 enc=... tgt=... rpm=...`（打印与 0x31 控制帧共用 USART2 线，接 USB-TTL 转 115200 查看；若控制板也在同一条线上收打印内容，其文本解析器会忽略非 `0xAA` 帧头字节，不影响控制）。
+4. 修改目标值：直接改 `main_example.c` 主循环里 `md_bin_motor_ctrl(200, -200, 0, 0, ...)` 的参数后重新编译烧录；或把目标值改成全局变量，通过按键/其它接口在线修改。
 
 ## 代码结构
 
 | 文件 | 内容 |
 |------|------|
-| `Core/Inc/motor_driver.h` | 协议常量、函数接口声明、回调声明 |
-| `Core/Src/motor_driver.c` | CRC8、组帧、文本指令、0x31/0x40/0x10/0x20 发送、滑动窗口帧解析、弱实现回调骨架 |
-| `Core/Src/main_example.c` | 依赖注入回调实现、0xF0/0x10 解析示例、main 主循环示例、USART 接收中断回调 |
-
-## 用到的协议命令
-
-| 类型 | 命令/帧 | 说明 |
-|------|---------|------|
-| 二进制帧 | `0x31 MOTOR_CTRL` | `[m1~m4: 4×int32 LE]` 四通道控制（50ms 连续发送） |
-| 二进制帧 | `0x40 SUBSCRIBE` | `[interval_ms:2B LE]` 开启 0xF0 周期上报 |
-| 二进制帧 | `0x10 READ_PARAM` | 读取 config_t（231B） |
-| 二进制帧 | `0x20 SAVE_EEPROM` | RAM 配置写 EEPROM |
-| 二进制帧 | `0xF0 STATUS_REPORT` | 状态上报解析（enc/tgt/rpm） |
-| 文本指令 | `/uart2 115200 0 uart` | 控制板预配置（必需） |
-| 文本指令 | `/mode <ch> speed` | 切速度闭环（可选） |
+| `Core/Src/mdc_lib.c`（外部） | mdc_lib 实现：CRC8/组帧/帧解析、流式解析器、文本指令层、15 个二进制打包函数、解析层（加入工程即可用） |
+| `Core/Src/main_example.c` | 集成示例：`uart2_send()`（打包结果 → HAL_UART_Transmit）、`main()` 主循环（订阅 + 50ms 发 0x31 + 0xF0/ACK 打印）、`HAL_UART_RxCpltCallback()`（逐字节喂 `md_parser_feed`） |
+| `Core/Inc/mdc_lib.h`（外部） | mdc_lib 头文件：常量、`md_status_t` / `md_ack_t` / `md_parser_t` 结构体、全部函数声明 |
 
 ## 常见问题
 
 | 现象 | 原因 / 处理 |
 |------|------------|
-| 编译报错 `undefined symbol: motor_driver_send_uart` | 忘了在 main.c 里实现该依赖注入回调 |
+| 编译报错找不到 `mdc_lib.h` | 确认已复制头文件到 `Core/Inc`，且 Include Paths 包含 `Core/Inc` |
+| 编译报错 `undefined symbol: md_xxx` | `mdc_lib.c` 未加入源文件组（Keil 需手动 Add Existing Files） |
 | 编译报错 `main.c` 与示例函数重名 | `main_example.c` 是集成参考：只合并内容，不要把整个文件加进工程与 main.c 冲突 |
-| HAL 版本差异 | 不同 Cube 版本的 HAL 函数名基本一致；老版本若没有 `HAL_UART_Receive_IT` 参数差异，请以你的 HAL 版本为准；`fputc` 重定向写法（MicroLIB）各版本兼容 |
-| F4 与 F1 差异 | 例程代码与芯片无关，仅需在 CubeMX 选型与时钟配置上按 F4 调整；引脚 PA2/PA3 在多数 F4 上仍是 USART2，但请以你芯片的 datasheet 为准 |
+| HAL 版本差异 | 不同 Cube 版本的 HAL 函数名基本一致；老版本若 `HAL_UART_Receive_IT` 参数有差异，请以你的 HAL 版本为准；`fputc` 重定向写法（MicroLIB）各版本兼容 |
+| F4 与 F1 差异 | 例程代码与芯片无关，仅需在 CubeMX 选型与时钟配置上按 F4 调整；引脚 PA2/PA3 在多数 F4 上仍是 USART2，但请以你芯片的数据手册为准 |
 | printf 不输出 | 勾选 MicroLIB + 重写 `fputc`；或改用 `HAL_UART_Transmit` 直接发字符串 |
 | 电机不动 | 确认控制板已 `/uart2 115200 0 uart` 且共地；确认 `/mode` 已配置；确认优先级仲裁（规范 §3.4） |
-| 收到 0xF0 但解析乱 | 确认 `md_subscribe` 已执行且间隔 ≥20ms；0xF0 payload 常规 56B / 扩展 72B，长度分支判断需正确 |
+| 没有 0xF0 打印 | 确认 `md_bin_subscribe` 已执行且间隔 ≥20ms；0xF0 payload 常规 56B / 扩展 72B，`md_parse_status` 按 len 自动兼容 |
 | 控制帧时灵时不灵 | 控制板处于协议自动识别期间会拒绝控制帧，等待识别完成 |
