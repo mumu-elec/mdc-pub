@@ -1,30 +1,64 @@
-# 03_binary_protocol — 二进制帧协议封装库 + 演示
+# 03_binary_protocol — mdc_lib 二进制 API 调用示例
 
 ## 功能
 
-- `motor_driver.py`：`class MotorDriver` 二进制帧协议封装库，覆盖协议规范 §3 全部 18 条命令：
-  - `crc8()` / `build_frame()`：CRC8（多项式 0x07，初值 0，范围 CMD+LEN+DATA）与组帧；
-  - `read_frame()`：滑动窗口找 `0xAA` 同步 → 按 LEN 收完 → CRC 校验（自动跳过垃圾字节与 CRC 失败帧）；
-  - `read_ack()`：ACK 校验（err=0x00 成功 / 0xFF 失败），等待期间自动跳过 STATUS_REPORT 等推送帧；
-  - `ping()` / `read_param()` / `write_param()` / `save()` / `load()` / `factory_reset()`；
-  - `motor_raw()` / `motor_ctrl()`（0x31 四通道 int32 批量控制帧）；
-  - `subscribe()` / `unsubscribe()` / `debug_sbus()` / `debug_speed()` / `reboot()` / `enter_bl()`；
-  - `parse_status_report()`：0xF0 帧解析（常规 56B / 扩展 72B）。
-- `demo_ping.py`：连接后依次执行 ping（打印 ACK 结果）→ read_param（打印 config_t 前 16 字节 hex + 解析受保护区 magic/硬件/固件版本）→ 收尾关闭。
+- 演示通用调用库 **mdc_lib 的二进制 API** 用法：帧的组帧 / CRC8 / 帧解析 / 字段解析全部由 mdc_lib 完成，脚本只负责串口收发。
+- 依次执行：
+  1. `md_text_version()` —— 文本指令 `/version`，打印设备硬件/软件版本回显；
+  2. `md_bin_ping()` —— 发送 0x01 PING 帧，用 `MDParser` 流式解析 ACK，`md_parse_ack` 校验（err=0 成功）；
+  3. `md_bin_read_param()` —— 发送 0x10 READ_PARAM，接收 231B config_t 应答，用 `md_parse_config` 解析为 dict 并打印版本区/字段。
 
 ## 硬件与环境要求
 
 | 项目 | 要求 |
 |------|------|
-| 硬件 | Motor Driver Controller（固件 v1.2.0+，协议版本 D=2），USB Type-C 线 |
+| 硬件 | Motor Driver Controller（固件 v1.2.0+，协议版本 D=2），USB Type-C 数据线 |
 | 驱动 | CH340N 虚拟串口驱动 |
+| 接线 | USB 线连接设备与电脑；设备需上电 |
 | Python | 3.8+ |
 | 依赖 | pyserial（唯一依赖） |
 
-## 依赖安装
+## 依赖与 mdc_lib
 
 ```bash
-pip install -r requirements.txt
+pip install pyserial        # 或 pip install -r requirements.txt
+```
+
+- **mdc_lib**：二进制帧的打包与解析统一由通用调用库完成（`md_bin_*` 打包函数返回整帧 bytes；`MDParser` 流式解析器自动找 `0xAA` 同步 + CRC8 校验；`md_parse_*` 解析 payload）。
+  正式工程把 `mdc_lib/python/mdc_lib.py` 复制到项目目录即可；本仓库内直接运行时代码已自动加载（见文件顶部）。
+
+## mdc_lib 调用指南
+
+本例程用到的 mdc_lib API（详见 [`mdc_lib/API.md`](../../../mdc_lib/API.md) §3/§5/§6）：
+
+| API | 返回 | 说明 |
+|-----|------|------|
+| `md_bin_ping()` | 整帧 bytes | 打包 0x01 PING 帧 |
+| `md_bin_read_param()` | 整帧 bytes | 打包 0x10 READ_PARAM 帧 |
+| `md_text_version()` | `b"/version\n"` | 文本指令查版本 |
+| `MDParser()` / `parser.feed(byte)` | `(cmd, payload)` 或 `None` | 逐字节流式解析，自动同步 + CRC8 校验 |
+| `md_parse_ack(payload)` | `Ack(cmd, err)` | 解析 ACK（err=0 成功，非 0 失败） |
+| `md_parse_config(raw)` | `dict` | 解析 231B config_t → 字段字典 |
+
+实际调用示例（串口收发由用户侧实现）：
+
+```python
+import mdc_lib, serial
+
+ser = serial.Serial("COM5", 2000000)
+parser = mdc_lib.MDParser()                     # 流式解析器
+
+ser.write(mdc_lib.md_bin_ping())                # ① 打包 0x01 PING 并发送
+for b in ser.read(64):                          # ② 接收字节喂给解析器
+    r = parser.feed(b)
+    if r and r[0] == mdc_lib.MD_CMD_PING:       # ③ 完整 ACK 帧
+        ack = mdc_lib.md_parse_ack(r[1])        # ④ 解析 err
+        print("OK" if ack.err == 0 else "FAIL")
+
+ser.write(mdc_lib.md_bin_read_param())          # 0x10 READ_PARAM
+# ... 同样用 parser.feed 收 231B 应答 ...
+cfg = mdc_lib.md_parse_config(raw_231)          # 解析为 dict（键名见 API.md §6.5）
+print(cfg["baud_rate"], cfg["control_mode"])
 ```
 
 ## 运行方法
@@ -43,45 +77,25 @@ python demo_ping.py --port COM5
 |------|------|
 | `--port` | 串口号（如 `COM5`）；缺省自动选择第一个 CH340 |
 
-预期输出：PING 成功信息；config_t 前 16 字节 hex；magic（应 = `0x4D445200`）、硬件版本 vA.B.C、固件版本 vD.E（D 即协议版本，必须与上位机一致）。
+预期输出：`/version` 版本回显；`PING 成功`；`config_t 231B` 前 16 字节 hex；`md_parse_config` 解析出的关键字段（波特率、控制模式、编码器线数、PID 参数等）。
 
 ## 代码结构
 
-| 文件 | 内容 |
-|------|------|
-| `motor_driver.py` | 协议常量（命令码/ACK）、`MotorDriver` 类（收发/解析/命令封装） |
-| `demo_ping.py` | 演示主程序：ping → read_param → 头部解析 → 关闭 |
-| `requirements.txt` | 依赖声明 |
-
-库的使用方式：
-
-```python
-from motor_driver import MotorDriver, CMD_PING
-
-drv = MotorDriver("COM5")
-err = drv.ping()                 # 0 = 成功
-cfg = drv.read_param()           # 231B config_t
-drv.motor_ctrl([300, 0, 0, 0])   # 通道1 开环 PWM 300
-drv.subscribe(50)                # 开启 50ms 状态上报
-cmd, data = drv.read_frame(1.0)  # 读取推送帧（0xF0 STATUS_REPORT）
-drv.close()
-```
-
-## 用到的协议命令（二进制）
-
-`0x01 PING`、`0x10 READ_PARAM`、`0x11 WRITE_PARAM`、`0x12 WRITE_FIELD`、`0x20 SAVE_EEPROM`、`0x21 LOAD_EEPROM`、`0x22 FACTORY_RESET`、`0x30 MOTOR_RAW`、`0x31 MOTOR_CTRL`、`0x40 SUBSCRIBE`、`0x41 UNSUBSCRIBE`、`0x43 DEBUG_SBUS`、`0x44 DEBUG_SPEED`、`0x52 ENTER_BL`、`0x53 REBOOT`、`0xF0 STATUS_REPORT`。
-
-> 帧格式 / CRC8 / ACK / 命令表均以 [`common/协议规范.md`](../../common/协议规范.md) §3 为准。
+| 函数/类 | 作用 |
+|---------|------|
+| `SerialLink.send()` | 发送 mdc_lib 打包好的帧 |
+| `SerialLink.wait_frame(cmd)` | 用 `MDParser` 流式接收指定命令的帧，返回 payload |
+| `SerialLink.read_echo()` | 读取文本回显（用于 /version） |
+| `main()` | 三步演示：/version → PING → READ_PARAM |
 
 ## 常见问题
 
 | 现象 | 处理 |
 |------|------|
 | PING 超时 | 检查 USB 连接、波特率 2000000-8N1、端口未被占用 |
-| magic 与 0x4D445200 不一致 | 固件 SW_MAJOR（协议版本 D）与上位机不一致，需升级/降级固件 |
+| READ_PARAM 长度不符 | 固件协议版本（SW_MAJOR / 协议版本 D）必须与 PC 端一致（当前 D=2），否则 config_t 布局不同 |
 | 控制帧（0x31）无效 | 先执行文本指令 `/priority 1`（USB 主控）；协议识别（/detect）期间控制帧被拒绝 |
-| CRC 校验失败 | 确认 CRC8 计算范围是 CMD+LEN+DATA（不含 SYNC）、多项式 0x07、初值 0 |
-| 等待 ACK 时收到大量 0xF0 帧 | 正常：库会自动跳过推送帧继续等 ACK；也可先 `unsubscribe()` |
-| WRITE_FIELD 报“受保护区” | offset < 12 的 magic/版本/CRC 等字段不可写（规范 §3.3），请用 WRITE_PARAM 全量写 |
+| 等待 ACK 时收到大量 0xF0 帧 | 正常：`MDParser` 会跳过推送帧继续等目标帧；也可先发送 `md_bin_unsubscribe()` |
+| 解析器长时间无输出 | 若之前订阅过状态上报，可调用 `parser.reset()` 清空内部缓冲 |
 
-> 协议细节以 [`common/协议规范.md`](../../common/协议规范.md) 为准。
+> 帧格式 / CRC8 / ACK / 命令表 / config_t 布局以 [`common/协议规范.md`](../../common/协议规范.md) §3/§5 为准。

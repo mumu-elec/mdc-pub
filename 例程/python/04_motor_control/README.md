@@ -2,7 +2,7 @@
 
 ## 功能
 
-- 以固定周期（`--interval`，默认 50ms）**连续发送 0x31 MOTOR_CTRL 帧**（四通道 int32 小端目标值）——这是固件实时控制的核心帧。
+- 以固定周期（`--interval`，默认 50ms）**连续发送 0x31 MOTOR_CTRL 帧**（四通道 int32 小端目标值）——这是固件实时控制的核心帧，帧由 mdc_lib 的 `md_bin_motor_ctrl()` 打包。
 - 斜坡平滑：每次发送向目标值逼近 `--ramp` 步长（默认 50），避免阶跃冲击；`--ramp 0` 直接跳变。
 - 运行中键盘控制（非阻塞）：
 
@@ -13,7 +13,7 @@
 | `0` | 目标清零 |
 | `q` | 退出（退出前发送全零归零帧） |
 
-- 启动时自动发送文本指令 `/priority 1` 并等待回显：上位机（USB）做实时控制必须获得控制仲裁优先权（协议规范 §1），否则 0x31 控制帧可能因 USART2 优先被拒绝。
+- 启动时自动发送文本指令 `/priority 1`（`md_text_build("/priority", "1")` 构造）并等待回显：USB 主控（PC）做实时控制必须获得控制仲裁优先权（协议规范 §1），否则 0x31 控制帧可能因 USART2 优先被拒绝。
 
 ## 控制目标含义（随通道控制模式）
 
@@ -27,15 +27,41 @@
 
 | 项目 | 要求 |
 |------|------|
-| 硬件 | Motor Driver Controller（固件 v1.2.0+），USB Type-C 线，电机 + 编码器 |
+| 硬件 | Motor Driver Controller（固件 v1.2.0+），USB Type-C 数据线，电机 + 编码器 |
 | 驱动 | CH340N 虚拟串口驱动 |
+| 接线 | USB 线连接设备与电脑；电机按通道接入对应输出；设备需上电 |
+| 系统 | Windows / Linux / macOS 均可 |
 | Python | 3.8+ |
 | 依赖 | pyserial（唯一依赖） |
 
-## 依赖安装
+## 依赖与 mdc_lib
 
 ```bash
-pip install -r requirements.txt
+pip install pyserial        # 或 pip install -r requirements.txt
+```
+
+- **mdc_lib**：0x31 控制帧的打包（含 CRC8/组帧）与 `/priority` 文本指令的构造统一由通用调用库完成，本脚本只负责串口收发、斜坡平滑与键盘交互。
+  正式工程把 `mdc_lib/python/mdc_lib.py` 复制到项目目录即可；本仓库内直接运行时代码已自动加载（见文件顶部）。
+
+## mdc_lib 调用指南
+
+本例程用到的 mdc_lib API（详见 [`mdc_lib/API.md`](../../../mdc_lib/API.md) §4/§5）：
+
+| API | 返回 | 说明 |
+|-----|------|------|
+| `md_bin_motor_ctrl(t0, t1, t2, t3)` | 整帧 bytes | 打包 0x31 MOTOR_CTRL（4×int32 LE，支持负数） |
+| `md_text_build("/priority", "1")` | `b"/priority 1\n"` | 构造文本指令（USB 控制优先权） |
+
+实际调用示例（串口收发由用户侧实现）：
+
+```python
+import mdc_lib, serial, time
+
+ser = serial.Serial("COM5", 2000000)
+ser.write(mdc_lib.md_text_build("/priority", "1"))   # 启动：USB 控制优先
+while True:
+    ser.write(mdc_lib.md_bin_motor_ctrl(300, 0, 0, 0))  # 通道1 目标 300
+    time.sleep(0.05)                                    # 30/50/100ms 连续发送
 ```
 
 ## 运行方法
@@ -68,7 +94,7 @@ python motor_control.py --port COM5 --mode speed --interval 30 --ramp 200
 
 ## ⚠️ 速度/位置闭环前必须配置 CPR 与 PID
 
-开环可直接运行；速度/位置闭环前请先用文本指令配置（本目录 `02_text_commands` 可交互发送，也可在控制脚本运行前用任意串口工具发送）：
+开环可直接运行；速度/位置闭环前请先用文本指令配置（`02_text_commands` 可交互发送，也可在运行前用任意串口工具发送）：
 
 ```bash
 /cpr 1 500                 # 通道1 编码器线数（每转物理刻度数）
@@ -84,17 +110,12 @@ python motor_control.py --port COM5 --mode speed --interval 30 --ramp 200
 
 | 函数/类 | 作用 |
 |---------|------|
-| `crc8()` / `build_frame()` | CRC8（poly 0x07，初值 0）与组帧（自包含实现） |
 | `KeyReader` | 跨平台非阻塞按键（Windows msvcrt / POSIX termios） |
-| `MotorController.send_ctrl()` | 发送 0x31 帧（4×int32 LE） |
+| `MotorController.send_ctrl()` | 发送 0x31 帧（`md_bin_motor_ctrl` 打包） |
+| `MotorController.send_text()` | 发送 mdc_lib 构造的文本指令并等待回显（/priority 1） |
 | `MotorController.ramp_step()` | 斜坡逼近（每次移动 ≤ ramp） |
 | `MotorController.run()` | 主循环：发帧 → 刷新状态 → 键盘 → 节拍 |
 | `MotorController.stop()` | 退出前连发全零归零帧并关闭串口 |
-
-## 用到的协议命令
-
-- 文本指令：`/priority 1`（启动时自动发送，USB 主控；配置闭环还用到 `/cpr`、`/speedctrl`、`/posctrl`、`/mode`、`/save`）。
-- 二进制命令：`0x31 MOTOR_CTRL`（核心控制帧，int32 LE ×4，受优先级仲裁）。
 
 ## 常见问题
 

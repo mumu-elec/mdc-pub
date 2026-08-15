@@ -3,31 +3,31 @@
 """
 05_status_monitor — 状态监控例程
 =================================
-订阅 0xF0 STATUS_REPORT 周期上报（0x40 SUBSCRIBE），后台读线程解析帧，
-控制台实时表格刷新（\r 覆盖 / ANSI 光标回退），可选 --csv 每帧记录一行。
-
-STATUS_REPORT 两种 payload（协议规范 §4，全部小端）：
-    常规 56B: enc[4]i32 + tgt[4]f32 + rpm[4]i32 + sbus_frame_cnt:u32 + sbus_ok_cnt:u32
-    扩展 72B: 上述 + rpm_raw[4]i32（需先 DEBUG_SPEED=1）
-本工具按 payload 长度自动兼容两种格式。
+订阅 0xF0 STATUS_REPORT 周期上报：
+  1) mdc_lib.md_bin_subscribe(interval) 打包 0x40 SUBSCRIBE 帧并发送；
+  2) 后台读线程把每个字节喂给 MDParser 流式解析器；
+  3) 解析出 cmd==0xF0 的 payload 后用 mdc_lib.md_parse_status 解析
+     （常规 56B / 扩展 72B 按长度自动兼容）；
+  4) 控制台实时表格刷新（ANSI 清屏 / \\r 单行覆盖），可选 --csv 每帧记录一行。
+Ctrl+C 干净退出：停止读线程 → 发送 mdc_lib.md_bin_unsubscribe() → 关闭串口。
 
 用法：
     python status_monitor.py                 # 自动选择第一个 CH340, 50ms 周期
     python status_monitor.py --port COM5 --interval 20
     python status_monitor.py --csv log.csv   # 同时记录 CSV
-
-Ctrl+C 干净退出（自动发送 0x41 UNSUBSCRIBE）。
 """
 
 import argparse
 import csv
-import os
-import struct
-import sys
 import threading
 import time
 
 import serial
+
+# 加载本仓库 mdc_lib（正式工程：复制 mdc_lib/python/mdc_lib.py 到项目目录即可）
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "mdc_lib", "python"))
+import mdc_lib
 
 BAUDRATE = 2000000
 
@@ -39,49 +39,6 @@ def setup_console():
             s.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-
-# 二进制帧常量（协议规范 §3）
-SYNC = 0xAA
-CMD_SUBSCRIBE = 0x40
-CMD_UNSUBSCRIBE = 0x41
-CMD_STATUS_REPORT = 0xF0
-ACK_OK = 0x00
-
-
-def crc8(data):
-    """CRC8-ATM：多项式 0x07，初值 0，范围 CMD+LEN+DATA（不含 SYNC）。"""
-    c = 0
-    for b in data:
-        c ^= b
-        for _ in range(8):
-            c = ((c << 1) ^ 0x07) & 0xFF if (c & 0x80) else (c << 1) & 0xFF
-    return c
-
-
-def build_frame(cmd, data=b""):
-    """组帧：[0xAA, cmd, len, data..., crc8]"""
-    body = bytes([cmd, len(data)]) + data
-    return bytes([SYNC]) + body + bytes([crc8(body)])
-
-
-def parse_status(payload):
-    """解析 0xF0 payload，按长度自动区分常规 56B / 扩展 72B。返回 dict。"""
-    if len(payload) == 56:
-        enc = list(struct.unpack("<4i", payload[0:16]))
-        tgt = list(struct.unpack("<4f", payload[16:32]))
-        rpm = list(struct.unpack("<4i", payload[32:48]))
-        fc, oc = struct.unpack("<II", payload[48:56])
-        return {"enc": enc, "tgt": tgt, "rpm": rpm,
-                "rpm_raw": None, "sbus_frame_cnt": fc, "sbus_ok_cnt": oc}
-    if len(payload) == 72:
-        enc = list(struct.unpack("<4i", payload[0:16]))
-        tgt = list(struct.unpack("<4f", payload[16:32]))
-        rpm = list(struct.unpack("<4i", payload[32:48]))
-        raw = list(struct.unpack("<4i", payload[48:64]))
-        fc, oc = struct.unpack("<II", payload[64:72])
-        return {"enc": enc, "tgt": tgt, "rpm": rpm,
-                "rpm_raw": raw, "sbus_frame_cnt": fc, "sbus_ok_cnt": oc}
-    raise ValueError(f"STATUS_REPORT payload 长度 {len(payload)} 非法（应为 56 或 72）")
 
 
 def enable_vt():
@@ -102,7 +59,7 @@ def enable_vt():
 
 
 class StatusMonitor:
-    """订阅状态上报：后台线程解析 + 主线程表格刷新。"""
+    """订阅状态上报：后台读线程喂字节给 MDParser + 主线程表格刷新。"""
 
     def __init__(self, port, interval_ms, csv_path=None):
         if interval_ms < 20:
@@ -110,8 +67,8 @@ class StatusMonitor:
         self.interval_ms = interval_ms
         self.ser = serial.Serial(port, BAUDRATE, timeout=0.05)
         self.ser.reset_input_buffer()
-        self._rx = b""                 # 帧解析滑动窗口
-        self._latest = None            # 最近一帧解析结果
+        self.parser = mdc_lib.MDParser()   # 流式解析器：自动找 0xAA 同步 + CRC8 校验
+        self._latest = None                # 最近一帧解析结果（md_status_t）
         self._stop = threading.Event()
         self._frames = 0
 
@@ -129,87 +86,46 @@ class StatusMonitor:
                  "sbus_frame_cnt", "sbus_ok_cnt"])
             self._csv_fp.flush()
 
-        # 开启订阅（同步等 ACK，确保固件已开始推送再起读线程）
-        self.ser.write(build_frame(CMD_SUBSCRIBE, struct.pack("<H", interval_ms)))
-        if self._wait_ack(CMD_SUBSCRIBE) != ACK_OK:
+        # 开启订阅：md_bin_subscribe 打包 0x40 帧 → 同步等 ACK（此时解析器单线程使用）
+        self.ser.write(mdc_lib.md_bin_subscribe(interval_ms))
+        if self._wait_ack(mdc_lib.MD_CMD_SUBSCRIBE) != mdc_lib.MD_ERR_OK:
             raise RuntimeError("SUBSCRIBE ACK 失败或超时")
 
         self._t0 = time.monotonic()
         self._thread = threading.Thread(target=self._reader, daemon=True)
         self._thread.start()
 
-    # ── 帧解析 ────────────────────────────────────────────
-    def _extract(self):
-        buf = self._rx
-        while True:
-            idx = buf.find(bytes([SYNC]))
-            if idx < 0:
-                self._rx = b""
-                return None
-            if idx > 0:
-                buf = buf[idx:]
-            if len(buf) < 3:
-                self._rx = buf
-                return None
-            ln = buf[2]
-            if ln > 250:
-                buf = buf[1:]
-                continue
-            fsize = 3 + ln + 1
-            if len(buf) < fsize:
-                self._rx = buf
-                return None
-            if crc8(buf[1:fsize - 1]) == buf[fsize - 1]:
-                self._rx = buf[fsize:]
-                return (buf[1], buf[3:fsize - 1])
-            buf = buf[1:]
-
     def _wait_ack(self, cmd, timeout=0.5):
         """等待指定命令的 ACK（跳过其它帧）。返回 err 字节或 None。"""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            frame = self._extract()
-            if frame is None:
-                remain = deadline - time.monotonic()
-                if remain <= 0:
-                    return None
-                chunk = self.ser.read(self.ser.in_waiting or 1)
-                if chunk:
-                    self._rx += chunk
-                continue
-            c, d = frame
-            if c == cmd and len(d) == 1:
-                return d[0]
+            chunk = self.ser.read(self.ser.in_waiting or 1)
+            for b in chunk:
+                r = self.parser.feed(b)
+                if r is not None and r[0] == cmd and len(r[1]) == 1:
+                    return r[1][0]
         return None
 
     # ── 后台读线程 ────────────────────────────────────────
     def _reader(self):
         while not self._stop.is_set():
-            frame = None
-            # 先尝试从缓冲提取
-            frame = self._extract()
-            if frame is None:
-                chunk = self.ser.read(4096)     # 阻塞 ≤ 串口 timeout(0.05s)
-                if chunk:
-                    self._rx += chunk
-                    frame = self._extract()
-            if frame is None:
-                continue
-            c, d = frame
-            if c == CMD_STATUS_REPORT:
+            chunk = self.ser.read(4096)     # 阻塞 ≤ 串口 timeout(0.05s)
+            for b in chunk:
+                r = self.parser.feed(b)     # 逐字节喂给流式解析器
+                if r is None or r[0] != mdc_lib.MD_CMD_STATUS_REPORT:
+                    continue
                 try:
-                    st = parse_status(d)
+                    st = mdc_lib.md_parse_status(r[1])   # 56B/72B 自动兼容
                 except ValueError:
                     continue
-                st["t_s"] = time.monotonic() - self._t0
                 self._latest = st
                 self._frames += 1
                 if self._csv_writer is not None:
-                    raw = st["rpm_raw"] or [""] * 4
+                    raw = list(st.rpm_raw) if st.extended else [""] * 4
                     self._csv_writer.writerow(
-                        [f"{st['t_s']:.3f}"] + st["enc"] +
-                        [f"{v:.1f}" for v in st["tgt"]] + st["rpm"] +
-                        list(raw) + [st["sbus_frame_cnt"], st["sbus_ok_cnt"]])
+                        [f"{time.monotonic() - self._t0:.3f}"] + list(st.enc) +
+                        [f"{v:.1f}" for v in st.tgt] + list(st.rpm) +
+                        list(raw) + [st.sbus_frame_cnt, st.sbus_ok_cnt])
                     self._csv_fp.flush()
 
     # ── 显示 ──────────────────────────────────────────────
@@ -219,13 +135,13 @@ class StatusMonitor:
         lines = ["  CH |    enc(脉冲)   |    tgt(当前)   |   rpm(滤波)   | rpm_raw(滤波前)"]
         lines.append("-----+----------------+----------------+---------------+----------------")
         for i in range(4):
-            raw = st["rpm_raw"][i] if st["rpm_raw"] else "-"
+            raw = st.rpm_raw[i] if st.extended else "-"
             lines.append(
-                f"  {i + 1}  | {st['enc'][i]:>12d}  | {st['tgt'][i]:>10.1f}   | "
-                f"{st['rpm'][i]:>9d}    | {raw if raw == '-' else f'{raw:>9d}'}")
+                f"  {i + 1}  | {st.enc[i]:>12d}  | {st.tgt[i]:>10.1f}   | "
+                f"{st.rpm[i]:>9d}    | {raw if raw == '-' else f'{raw:>9d}'}")
         lines.append("-----+----------------+----------------+---------------+----------------")
-        lines.append(f"  sbus_frame_cnt={st['sbus_frame_cnt']}  "
-                     f"sbus_ok_cnt={st['sbus_ok_cnt']}  "
+        lines.append(f"  sbus_frame_cnt={st.sbus_frame_cnt}  "
+                     f"sbus_ok_cnt={st.sbus_ok_cnt}  "
                      f"帧数={self._frames}  周期={self.interval_ms}ms  "
                      f"(Ctrl+C 退出)")
         return lines
@@ -255,8 +171,8 @@ class StatusMonitor:
         if self._thread.is_alive():
             self._thread.join(timeout=1.0)
         try:
-            self.ser.write(build_frame(CMD_UNSUBSCRIBE))
-            self._wait_ack(CMD_UNSUBSCRIBE, timeout=0.5)
+            self.ser.write(mdc_lib.md_bin_unsubscribe())      # 0x41 关闭上报
+            self._wait_ack(mdc_lib.MD_CMD_UNSUBSCRIBE, timeout=0.5)
             print("已发送 UNSUBSCRIBE，状态上报已关闭。")
         finally:
             if self.ser.is_open:
