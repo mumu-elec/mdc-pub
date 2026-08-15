@@ -2,15 +2,20 @@
 
 ## 功能
 
-针对 **Motor Driver Controller**（STM32F401 + TB6612 四路带编码器直流电机驱动器）的 ROS1 驱动节点。节点通过 **USB 虚拟串口（CH340N，固定 2000000-8N1）** 与固件通信，功能与 ROS2 版 `ros2_motor_driver` 完全对齐：
+针对 **Motor Driver Controller**（STM32F401 + TB6612 四路带编码器直流电机驱动器）的 ROS1 驱动节点，功能与 ROS2 版 `ros2_motor_driver` 完全对齐。节点通过 **USB 虚拟串口（CH340N，固定 2000000-8N1）** 与设备通信：
 
-- 启动时自动发送文本指令 `/priority 1\n` 并等待回显，将 USB 置为控制主控（否则控制帧会被固件仲裁拒绝）；
-- 发送 `SUBSCRIBE (0x40)` 开启状态周期上报，后台线程解析 **0xF0 STATUS_REPORT** 并发布 `/motor_status`；
-- 订阅 `/motor_cmd`，组 **0x31 MOTOR_CTRL** 控制帧发送（内部按 30Hz 限流，建议发布频率 10~30Hz）；
-- 三个服务：`get_config`（0x10 READ_PARAM）、`set_config`（0x11 WRITE_PARAM）、`save_config`（0x20 SAVE_EEPROM），通过 ACK 帧完成请求-应答；
-- 节点关闭时自动 `UNSUBSCRIBE (0x41)` 并发送全零控制帧，使电机停车、关闭状态上报。
+- 协议打包/解析全部由 **mdc_lib 通用调用库**完成（CRC8、组帧、滑动窗口解析、状态帧/配置解析均位于库内），节点只保留串口收发与 ROS 接口；
+- 启动时用 `mdc::text_build("/priority", "1")` 发送文本指令 `/priority 1` 并等待回显，将 USB 置为控制主控（否则控制帧会被设备仲裁拒绝）；
+- 发送 `SUBSCRIBE (0x40)` 开启状态周期上报，后台线程用 `mdc::Parser` 流式解析 **0xF0 STATUS_REPORT**（常规 56B / 扩展 72B 自动兼容）并发布 `/motor_status`；
+- 订阅 `/motor_cmd`，用 `mdc::bin_motor_ctrl` 组 **0x31 MOTOR_CTRL** 控制帧发送（内部按 30Hz 限流，建议发布频率 10~30Hz）；
+- 三个服务：`get_config`（0x10 READ_PARAM）、`set_config`（0x11 WRITE_PARAM）、`save_config`（0x20 SAVE_EEPROM），分别由 `mdc::bin_read_param` / `mdc::bin_write_param` / `mdc::bin_save` 打包，配置解析/重打包使用 `mdc::parse_config` / `mdc::pack_config`；
+- 节点关闭时自动 `UNSUBSCRIBE (0x41)`（`mdc::bin_unsubscribe`）并发送全零控制帧（`mdc::bin_motor_ctrl(0,0,0,0)`），使电机停车、关闭状态上报。
 
-二进制帧格式、CRC8、命令号、STATUS_REPORT 布局**完全按** [`common/协议规范.md`](../../common/协议规范.md)（布局 v2.1，config_t = 231B）实现。
+**硬件与接线：**
+
+- Motor Driver Controller 主板 ×1、四路带编码器直流电机 ×4、编码器信号线按主板丝印接入；
+- 主板 USB Type-C 口连接电脑（CH340N 虚拟串口），供电即可，无需额外接线；
+- 实时控制前必须确认 `/priority 1` 已生效（驱动节点启动时自动发送并等待回显）。
 
 ## 消息/服务定义
 
@@ -22,24 +27,81 @@
 | `/set_config` | `ros1_motor_driver/SetConfig` | 服务：请求 `uint8[231] config` → 响应 `bool success`（仅 RAM，受保护字段自动还原） |
 | `/save_config` | `ros1_motor_driver/SaveConfig` | 服务：空请求 → 响应 `bool success`（RAM 配置写入 EEPROM，约 190ms） |
 
-## 硬件与环境要求
+## 依赖与 mdc_lib
 
-- **硬件**：Motor Driver Controller 主板，USB Type-C 连接电脑（CH340N 虚拟串口）
 - **系统**：Ubuntu 20.04 + **ROS1 Noetic**（`ros-noetic-desktop-full`）
-- **权限**：当前用户需能访问串口设备
-  ```bash
-  sudo usermod -aG dialout $USER    # 重新登录生效
-  ls -l /dev/ttyUSB*                # 确认设备存在
-  ```
-- **波特率固定 2000000-8N1**，无需也不能修改（固件 USB 口固定）
-- 实时控制前必须确认 `/priority 1` 已生效（驱动节点启动时自动发送并等待回显）
+- **ROS 依赖**：`roscpp`、`rospy`、`std_msgs`、`message_generation`（见 `package.xml`）
+- **mdc_lib**：`mdc_lib/cpp/mdc_lib.hpp`（header-only、命名空间 `mdc`、零第三方依赖）。协议打包/解析全部由库完成，节点内不包含任何协议实现代码。
+
+**mdc_lib 引用两种配置方式：**
+
+1. **仓库内构建（开箱即用）**：`CMakeLists.txt` 已添加 include 路径
+   ```cmake
+   include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../mdc_lib/cpp)
+   ```
+   直接引用仓库内的 `mdc_lib.hpp`，无需任何拷贝。
+
+2. **独立使用本包**：把 `mdc_lib/cpp/mdc_lib.hpp` 复制到本包 `include/` 目录，
+   并将 `CMakeLists.txt` 中的 include 路径改为：
+   ```cmake
+   include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+   ```
+
+## mdc_lib 调用指南
+
+本节点用到的 mdc API（全部来自 `mdc_lib/cpp/mdc_lib.hpp`，命名空间 `mdc`）：
+
+| mdc API | 节点用途 |
+|---------|---------|
+| `mdc::text_build(cmd, args)` | 构造文本指令行（自动带结尾 `\n`）：启动时发送 `/priority 1` |
+| `mdc::bin_subscribe(interval_ms)` | 打包 0x40 SUBSCRIBE 帧，开启状态周期上报 |
+| `mdc::bin_unsubscribe()` | 打包 0x41 UNSUBSCRIBE 帧，关闭状态上报 |
+| `mdc::bin_motor_ctrl(t0, t1, t2, t3)` | 打包 0x31 MOTOR_CTRL 控制帧（4×int32 LE） |
+| `mdc::bin_read_param()` | 打包 0x10 READ_PARAM 帧，读取 config_t 231B |
+| `mdc::bin_write_param(config)` | 打包 0x11 WRITE_PARAM 帧（config_t 231B） |
+| `mdc::bin_save()` | 打包 0x20 SAVE_EEPROM 帧，RAM 配置写入 EEPROM |
+| `mdc::parse_config(raw, cfg)` | 解析 231B config_t → `mdc::Config`（服务中校验/摘要） |
+| `mdc::pack_config(cfg)` | `mdc::Config` → 231B config_t（受保护区 offset 0~10 置 0，设备写入时自动还原） |
+| `mdc::Parser::feed(bytes, len)` | 流式解析：批量喂入字节，自动找 0xAA 同步 + CRC8 校验，文本噪声自动丢弃 |
+| `mdc::parse_status(payload, st)` | 解析 0xF0 状态帧 → `mdc::Status`（56B / 72B 自动兼容） |
+| `mdc::parse_ack(payload, ack)` | 解析 ACK 帧 DATA 段（1 字节 err，`err=0` 成功） |
+
+调用示例（与节点内用法一致）：
+
+```cpp
+#include "mdc_lib.hpp"
+
+// ① 发送文本指令（mdc_lib 自动补 '\n'）
+const std::string line = mdc::text_build("/priority", "1");   // "/priority 1\n"
+serial.write((const uint8_t*)line.data(), line.size());
+
+// ② 发送二进制帧（库返回整帧，含 SYNC/CRC8，直接写串口）
+serial.write(mdc::bin_subscribe(50));               // 0x40，50ms 周期上报
+serial.write(mdc::bin_motor_ctrl(300, 0, 0, 0));    // 0x31，通道1 开环 PWM 300
+serial.write(mdc::bin_read_param());                // 0x10 读全部配置
+
+// ③ 接收：字节喂给流式解析器，库自动找同步字 + 校验 CRC8
+mdc::Parser parser;
+for (size_t i = 0; i < n; ++i) {
+    auto frame = parser.feed(rx[i]);                // 完整帧 → {cmd, payload}
+    if (frame && frame->first == mdc::MD_CMD_STATUS_REPORT) {
+        mdc::Status st;
+        if (mdc::parse_status(frame->second, st)) {
+            // st.enc[0] 编码器脉冲 / st.rpm[0] 转速 / st.tgt[0] 目标值 ...
+        }
+    }
+}
+```
+
+> 打包函数返回整帧字节（含 SYNC 与 CRC8），参数非法时抛 `std::invalid_argument`；
+> 解析函数返回 `bool`，长度不符/CRC 失败返回 `false` 且输出参数不变。
 
 ## 构建
 
 ```bash
 # 1. 创建并进入工作区（假设已有 ~/catkin_ws）
 mkdir -p ~/catkin_ws/src && cd ~/catkin_ws
-# 2. 将本包复制到 src/ 下:
+# 2. 将本包复制到 src/ 下（方式一仓库内构建时，保持 ../../../mdc_lib 相对路径有效）:
 #    cp -r <例程>/ros/ros1_motor_driver src/
 # 3. 构建（需先 source ROS1 环境）
 source /opt/ros/noetic/setup.bash
@@ -48,6 +110,8 @@ source devel/setup.bash
 ```
 
 > 也可使用 `catkin build`（catkin_tools）：`catkin build ros1_motor_driver`
+>
+> 独立使用本包（mdc_lib.hpp 已复制到包内 include/）时无需额外操作，构建命令相同。
 
 ## 运行
 
@@ -73,7 +137,7 @@ rosrun ros1_motor_driver motor_driver_node \
 
 ## 使用示例
 
-**查看状态**（应与固件 0xF0 上报一致，默认 50ms 一帧）：
+**查看状态**（应与设备 0xF0 上报一致，默认 50ms 一帧）：
 
 ```bash
 rostopic echo /motor_status
@@ -109,7 +173,7 @@ rosrun ros1_motor_driver teleop.py
 
 ```
 ros1_motor_driver/
-├── CMakeLists.txt            # catkin_package + add_message_files + generate_messages
+├── CMakeLists.txt            # catkin_package + add_message_files + generate_messages + mdc_lib include 路径
 ├── package.xml               # 依赖: roscpp rospy std_msgs message_generation
 ├── msg/
 │   ├── MotorCmd.msg          # 四通道目标值
@@ -119,7 +183,7 @@ ros1_motor_driver/
 │   ├── SetConfig.srv         # 写 config_t
 │   └── SaveConfig.srv        # 保存 EEPROM
 ├── src/
-│   └── motor_driver_node.cpp # 节点: 串口(termios) + 帧解析 + 话题/服务
+│   └── motor_driver_node.cpp # 节点: 串口(termios) + mdc_lib 打包/解析 + 话题/服务
 ├── launch/
 │   └── motor_driver.launch
 ├── scripts/
@@ -132,9 +196,10 @@ ros1_motor_driver/
 | 现象 | 处理 |
 |------|------|
 | `Cannot open /dev/ttyUSB0` | 检查设备节点 `ls /dev/ttyUSB*`、加入 `dialout` 组、确认 CH340 驱动 |
-| 收到 `/priority 1` 回显超时 | 确认固件为 v1.2.0+（SW_MAJOR=2）、USB 线连接正常；串口波特率必须 2000000 |
+| 收到 `/priority 1` 回显超时 | 确认设备固件 v1.2.0+（协议版本 D=2）、USB 线连接正常；串口波特率必须 2000000 |
 | 控制帧无效/电机不动 | 确认日志中 `/priority 1` 回显成功（USB 主控）；检查 `/timeout` 未超时归零；协议识别（/detect）期间控制帧被拒绝，稍等重试 |
 | `/motor_status` 无输出 | 确认 SUBSCRIBE 成功日志；`rostopic list` 查看话题是否注册；检查 `status_interval_ms` ≥ 20 |
 | 发布 /motor_cmd 被限流 | 驱动节点按 30Hz 限流发送，日志有提示；建议发布频率 10~30Hz |
-| CRC 校验失败/解析不到帧 | 固件与上位机协议版本 D 必须一致（布局 v2.1）；CRC8 范围为 CMD+LEN+DATA（不含 SYNC），多项式 0x07 初值 0 |
-| 版本不匹配 | 上位机版本 vD.F 的 D 必须等于固件 SW_MAJOR（=2） |
+| 解析不到帧/状态异常 | 0xAA 同步、CRC8 校验与 56B/72B 状态解析已全部由 mdc_lib 内部完成，无需手动处理；确认 mdc_lib 与设备固件协议版本一致（布局 v2.1） |
+| 编译找不到 mdc_lib.hpp | 确认 CMakeLists.txt 的 include 路径；独立使用时按「依赖与 mdc_lib」章节把 mdc_lib.hpp 复制到包内 include/ |
+| 版本不匹配 | 设备固件协议版本 D 必须与 mdc_lib 的协议版本（布局 v2.1）一致 |
