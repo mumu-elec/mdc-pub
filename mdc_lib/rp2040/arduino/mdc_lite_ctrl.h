@@ -1,10 +1,10 @@
 /**
  * @file    mdc_lite_ctrl.h
- * @brief   Motor Driver Controller 极简调用库 —— 调用+回调接收（control + speed callback）
+ * @brief   Motor Driver Controller 极简调用库 —— 调用+回调接收（control + speed callback，独立实现）
  *
  * 规范依据：../LITE.md（mdc_lite 极简 LITE API，唯一依据）
- * 复用：mdc_lite.h（send-only，底下再复用 mdc_lib 的 md_bin_*）与
- *       mdc_lib.h（md_parser_t / md_parser_feed / md_parse_status）。
+ * 依赖：同目录 mdc_lite.h（send-only，独立实现，仅提供发送侧）。本文件**不依赖**
+ *       mdc_lib.h（不调用 md_parser_* / md_parse_status），自带**滑窗流式解析器**。
  *
  * 在 send-only 全部函数基础上，增加一个"流式状态接收器"：逐字节喂入，自动找
  * 0xAA 同步、校验 CRC，收到 0xF0 STATUS_REPORT（56B/72B 自动兼容）时提取四通道
@@ -41,9 +41,14 @@
 
 #include <stdint.h>
 
-/* 复用 send-only（md_lite_ctrl / md_lite_stop / md_lite_subscribe / md_lite_unsubscribe），
- * 底层再复用 mdc_lib（md_parser_t / md_parser_feed / md_parse_status / md_status_t） */
 #include "mdc_lite.h"
+
+/* 流式解析器缓冲大小（可裁剪；默认 256 可容纳最大帧 235B（250 字节 DATA 亦兼容）。
+ * 本库仅回读 0xF0（56B/72B，最大整帧 76B），小内存平台可设小（如 64/80），
+ * 但需 ≥ 最大可见帧长以免溢出。 */
+#ifndef MDC_LITE_PARSER_BUF
+#define MDC_LITE_PARSER_BUF 256u
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,10 +59,12 @@ extern "C" {
 typedef void (*md_lite_on_speed_t)(const int32_t rpm[4]);
 
 /* 极简控制器状态（send-only + 回调接收）。
- * 内含 mdc_lib 的流式解析器（默认 256B，见 MD_PARSER_BUF），请声明为全局/static，避免占栈 */
+ * 内含自带的滑窗流式解析器缓冲（默认 256B，见 MDC_LITE_PARSER_BUF），
+ * 请声明为全局/static，避免占栈 */
 typedef struct {
-    md_parser_t       parser;      /* 流式解析器（自动找 0xAA 同步 + CRC 校验） */
-    md_lite_on_speed_t on_speed;   /* 用户速度回调（可为 NULL 则不派发） */
+    uint8_t            buf[MDC_LITE_PARSER_BUF];  /* 流式解析缓冲（自动找 0xAA 同步 + CRC 校验） */
+    uint16_t           len;                       /* 缓冲内已累计字节数 */
+    md_lite_on_speed_t on_speed;                  /* 用户速度回调（可为 NULL 则不派发） */
 } md_lite_ctrl_t;
 
 /* 注册速度回调并初始化流式解析器。cb 可为 NULL（不派发）。

@@ -1,7 +1,7 @@
 # mdc_lib — RP2040（Arduino，arduino-pico）接入文档
 
 > 平台：Raspberry Pi Pico 等 RP2040 板（arduino-pico core）｜ 文件：`mdc_lib.h` + `mdc_lib.cpp` + `README.md`
-> 协议依据：[`../例程/common/协议规范.md`](../../../例程/common/协议规范.md)（布局 v2.1，config_t = 231B，固件 SW_MAJOR=2）
+> 协议依据：[`../../协议规范.md`](../../协议规范.md)（布局 v2.1，config_t = 231B，固件 SW_MAJOR=2）
 > API 规范：[`../API.md`](../../API.md)（唯一依据，同一套 `md_*` 签名）
 
 ## 一、功能

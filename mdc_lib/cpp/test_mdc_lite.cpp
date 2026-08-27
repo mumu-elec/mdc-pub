@@ -1,21 +1,23 @@
 // ============================================================================
-// test_mdc_lite.cpp — mdc_lite / mdc_lite_ctrl 一致性自测（无硬件，纯计算）
+// test_mdc_lite.cpp — mdc_lite / mdc_lite_ctrl 一致性自测（无硬件，纯计算，自包含）
 // ============================================================================
 // 覆盖：LITE.md §2.2 全部验证向量（send-only 帧）+ §3 回调派发（流式 0xF0 解析）。
-//        —— crc8 向量、ctrl(100,-200,0,300) DATA 段、subscribe(50) 帧、
-//           unsubscribe/stop、与 mdc::bin_motor_ctrl 等价；
-//        —— 回调：垃圾/坏CRC/0x31 帧不触发；0xF0 帧(56B/72B)恰好触发一次且 rpm 正确。
+//       —— crc8 向量、ctrl(100,-200,0,300) DATA 段、subscribe(50) 帧、unsubscribe/stop；
+//       —— 回调：垃圾/坏CRC/0x31 帧不触发；0xF0 帧(56B/72B)恰好触发一次且 rpm 正确。
+// **自包含**：只 include 同族独立极简库 mdc_lite.hpp / mdc_lite_ctrl.hpp，
+//       不 include mdc_lib.hpp，也不调用 mdc:: 任何函数。
 //
 // 编译：g++ -std=c++17 -Wall -Wextra -o test_mdc_lite test_mdc_lite.cpp
 // 运行：./test_mdc_lite           （全 PASS 时 main 返回 0）
 // ============================================================================
-#include "mdc_lite.hpp"        // send-only：mdc_lite::ctrl/stop/subscribe/unsubscribe
+#include "mdc_lite.hpp"        // send-only：mdc_lite::ctrl/stop/subscribe/unsubscribe/crc8/build_frame
 #include "mdc_lite_ctrl.hpp"    // 调用+回调：mdc_lite::MdLite
 
 #include <array>
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <cstddef>
 #include <initializer_list>
 #include <vector>
 
@@ -61,12 +63,12 @@ static void dump(const char* tag, const std::vector<uint8_t>& v) {
 }
 
 // ============================================================================
-// crc8 向量（复用之 mdc_lib，作为底层一致性的兜底）
+// crc8 向量（LITE.md §6 一致性自检）
 // ============================================================================
 static void test_crc8_vectors() {
-    CHECK(mdc::crc8(make_bytes({0x01, 0x00})) == 0x15);
-    const uint8_t s[] = {'1','2','3','4','5','6','7','8','9'};
-    CHECK(mdc::crc8(s, 9) == 0xF4);
+    CHECK(mdc_lite::crc8(make_bytes({0x01, 0x00})) == 0x15);
+    const uint8_t s[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+    CHECK(mdc_lite::crc8(s, 9) == 0xF4);
 }
 
 // ============================================================================
@@ -87,12 +89,12 @@ static void test_send_only() {
         if (frame[3 + i] != data_expect[i]) data_ok = false;
     CHECK(data_ok);
     if (!data_ok) dump("ctrl data", frame);
-    CHECK(mdc::crc8(frame.data() + 1, frame.size() - 2) == frame[frame.size() - 1]);
+    CHECK(mdc_lite::crc8(frame.data() + 1, frame.size() - 2) == frame[frame.size() - 1]);
 
     // subscribe(50)：整帧 == AA 40 02 32 00 9E（CRC 对 40 02 32 00 计算，==0x9E）
     const std::vector<uint8_t> sub = mdc_lite::subscribe(50);
     CHECK(sub == make_bytes({0xAA, 0x40, 0x02, 0x32, 0x00, 0x9E}));
-    CHECK(mdc::crc8(sub.data() + 1, 4) == sub[5]);
+    CHECK(mdc_lite::crc8(sub.data() + 1, 4) == sub[5]);
 
     // stop == ctrl(0,0,0,0)；unsubscribe CMD=0x41
     CHECK(mdc_lite::stop() == mdc_lite::ctrl(0, 0, 0, 0));
@@ -100,28 +102,23 @@ static void test_send_only() {
     const std::vector<uint8_t> zf = mdc_lite::stop();
     CHECK(zf[0] == 0xAA && zf[1] == 0x31 && zf[2] == 16);
     for (size_t i = 3; i < 3 + 16; ++i) CHECK(zf[i] == 0x00);
-
-    // 与 mdc_lib 一致：ctrl 等价于 mdc::bin_motor_ctrl；subscribe 等价于 mdc::bin_subscribe
-    CHECK(mdc_lite::ctrl(1, 2, 3, 4) == mdc::bin_motor_ctrl(1, 2, 3, 4));
-    CHECK(mdc_lite::subscribe(50) == mdc::bin_subscribe(50));
-    CHECK(mdc_lite::unsubscribe() == mdc::bin_unsubscribe());
 }
 
 // ============================================================================
-// 0xF0 STATUS_REPORT 帧构造（56B / 72B）
+// 0xF0 STATUS_REPORT 帧构造（56B / 72B）—— 用同族独立库 mdc_lite::build_frame
 // ============================================================================
 static std::vector<uint8_t> make_status56(const int32_t enc[4], const float tgt[4],
                                           const int32_t rpm[4],
                                           uint32_t frame_cnt, uint32_t ok_cnt) {
     std::vector<uint8_t> payload(56, 0);
     for (int i = 0; i < 4; ++i) {
-        put_i32(payload, 0  + i * 4, enc[i]);      // enc @0
-        put_f32(payload, 16 + i * 4, tgt[i]);      // tgt @16
-        put_i32(payload, 32 + i * 4, rpm[i]);      // rpm @32
+        put_i32(payload, 0 + i * 4, enc[i]);      // enc @0
+        put_f32(payload, 16 + i * 4, tgt[i]);     // tgt @16
+        put_i32(payload, 32 + i * 4, rpm[i]);     // rpm @32
     }
-    put_u32(payload, 48, frame_cnt);               // sbus_frame_cnt @48
-    put_u32(payload, 52, ok_cnt);                  // sbus_ok_cnt @52
-    return mdc::build_frame(0xF0, payload);
+    put_u32(payload, 48, frame_cnt);              // sbus_frame_cnt @48
+    put_u32(payload, 52, ok_cnt);                 // sbus_ok_cnt @52
+    return mdc_lite::build_frame(0xF0, payload);
 }
 
 static std::vector<uint8_t> make_status72(const int32_t enc[4], const float tgt[4],
@@ -129,14 +126,14 @@ static std::vector<uint8_t> make_status72(const int32_t enc[4], const float tgt[
                                           uint32_t frame_cnt, uint32_t ok_cnt) {
     std::vector<uint8_t> payload(72, 0);
     for (int i = 0; i < 4; ++i) {
-        put_i32(payload, 0  + i * 4, enc[i]);      // enc @0
-        put_f32(payload, 16 + i * 4, tgt[i]);      // tgt @16
-        put_i32(payload, 32 + i * 4, rpm[i]);      // rpm @32
-        put_i32(payload, 48 + i * 4, rpm_raw[i]);  // rpm_raw @48
+        put_i32(payload, 0 + i * 4, enc[i]);      // enc @0
+        put_f32(payload, 16 + i * 4, tgt[i]);     // tgt @16
+        put_i32(payload, 32 + i * 4, rpm[i]);     // rpm @32
+        put_i32(payload, 48 + i * 4, rpm_raw[i]); // rpm_raw @48
     }
-    put_u32(payload, 64, frame_cnt);               // sbus_frame_cnt @64
-    put_u32(payload, 68, ok_cnt);                  // sbus_ok_cnt @68
-    return mdc::build_frame(0xF0, payload);
+    put_u32(payload, 64, frame_cnt);              // sbus_frame_cnt @64
+    put_u32(payload, 68, ok_cnt);                 // sbus_ok_cnt @68
+    return mdc_lite::build_frame(0xF0, payload);
 }
 
 // ============================================================================

@@ -8,7 +8,7 @@ mdc_lib.py — Motor Driver Controller 通用调用库（MicroPython 实现）
 串口收发由用户自己实现（拿返回的 bytes 自行 uart.write()；
 收到的字节喂给解析函数或 MDParser 流式解析器）。
 
-**协议依据：** `../../例程/common/协议规范.md`（布局 v2.1，config_t=231B，
+**协议依据：** `协议规范.md`（布局 v2.1，config_t=231B，
 24 条文本指令，18 条二进制命令）
 **API 依据：** `../../API.md`（统一 API 规范，函数命名 / 参数顺序 / 返回约定
 与该文档逐一对应；本文件为 ESP32 / RP2040 / ESP8266 三平台共用的 MicroPython 实现）

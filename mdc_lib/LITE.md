@@ -1,9 +1,9 @@
 # mdc_lite — 极简调用库规范（LITE API）
 
-> **定位：** 在完整版 `mdc_lib`（API.md）之上的一层**极简封装**，只服务于一个核心场景：
+> **定位：** **独立实现**（自带 CRC8/组帧/0xF0 解析，不依赖 `mdc_lib`），只服务于一个核心场景：
 > **上位机调参、下位机执行** —— 你只需告诉上位机要发什么控制量、并从下位机拿回实时转速。
 > 除此之外的文本指令、config_t 全字段读写、SBUS/检测/波特率识别等**一律不管**。
-> **依赖：** 各平台实现直接复用本目录同名平台的 `mdc_lib`（API.md 的打包/解析原语），
+> **依赖：** 各平台实现完全独立实现（自带 CRC8/组帧/0xF0 解析，不依赖 `mdc_lib`），
 > 不重复造轮子，也不改变协议字节布局。
 
 **极简范围（只涉及这 4 条二进制命令）：**
@@ -86,18 +86,18 @@
 
 ---
 
-## 4. 例程分类结构（例程目录内按平台）
+## 4. 例程分类结构（各平台 `examples/` 下）
 
-每个平台的例程目录下按**功能级别**分三类（命名用中文子目录，与既有中文命名风格一致）：
+例程已**合并进各平台库目录**（`mdc_lib/<平台>/examples/`），不再单独放顶层 `例程/`。
+每个平台 `examples/` 下按**功能级别**分三类（命名用中文子目录，与既有中文命名风格一致）：
 
-| 类别 | 内容 | 参考现有 |
-|------|------|---------|
-| `完整/` | 该平台完整的协议示例（文本指令 + 二进制 + 配置读写等既有全套） | 各平台现有的 `01_*`~`06_*` |
-| `极简控制/` | 只演示"发送控制帧"：`mdc_lite` send-only 最小程序 | — |
-| `控制+回调/` | 演示"发控制帧 + 收速度回调"：`mdc_lite_ctrl` 最小程序 | — |
+| 类别 | 内容 |
+|------|------|
+| `完整/` | 该平台完整的协议示例（文本指令 + 二进制 + 配置读写等既有全套，用完整 `mdc_lib`） |
+| `极简控制/` | 只演示"发送控制帧"：`mdc_lite` send-only 最小程序（独立实现） |
+| `控制+回调/` | 演示"发控制帧 + 收速度回调"：`mdc_lite_ctrl` 最小程序（独立实现） |
 
-> ROS 包与 `mcu/` 单片机工程按同思路归类；若某平台已有更细分类（如 host 的 01~06 序号），
-> 将其归入 `完整/` 并保留序号，在目录 README 中给出「完整/极简控制/控制+回调」导览。
+> ROS 包归入 `cpp/examples/ros/`；单片机工程按同思路归类，保留目录 README 的「完整/极简控制/控制+回调」导览。
 
 ---
 
@@ -107,10 +107,10 @@
 |------|------|------|
 | python | `mdc_lite.py` + `mdc_lite_ctrl.py` | 纯标准库；`mdc_lite_ctrl` `import mdc_lite` |
 | cpp | `mdc_lite.hpp` + `mdc_lite_ctrl.hpp` | header-only，命名空间 `mdc_lite`；`mdc_lite_ctrl.hpp` `#include "mdc_lite.hpp"` |
-| stm32/hal、rp2040/c-sdk、esp32/esp-idf | `mdc_lite.h/.c` + `mdc_lite_ctrl.h/.c` | 纯 C，不 include HAL；复用本目录 `mdc_lib.h/.c` |
-| esp32/arduino、rp2040/arduino、avr/arduino_uno、esp8266/arduino | `mdc_lite.h/.cpp` + `mdc_lite_ctrl.h/.cpp` | 纯 C++，不 include Arduino 头；复用同目录 `mdc_lib.h/.cpp` |
-| esp32/micropython、rp2040/micropython、esp8266/micropython | `mdc_lite.py` + `mdc_lite_ctrl.py` | 纯 MicroPython（零依赖），复用同目录 `mdc_lib.py` |
-| 51/keil | `mdc_lite.h/.c` + `mdc_lite_ctrl.h/.c` | C89 兼容、英文注释、复用同目录 `mdc_lib.h/.c` |
+| stm32/hal、rp2040/c-sdk、esp32/esp-idf | `mdc_lite.h/.c` + `mdc_lite_ctrl.h/.c` | 纯 C，不 include HAL；**完全独立实现**（自带 CRC8/组帧/流式 0xF0 解析，不依赖 `mdc_lib.h/.c`，仅含 `<stdint.h>`） |
+| esp32/arduino、rp2040/arduino、avr/arduino_uno、esp8266/arduino | `mdc_lite.h/.cpp` + `mdc_lite_ctrl.h/.cpp` | 纯 C++，不 include Arduino 头；**完全独立实现**（自带 CRC8/组帧/0xF0 解析，不依赖 `mdc_lib.h/.cpp`） |
+| esp32/micropython、rp2040/micropython、esp8266/micropython | `mdc_lite.py` + `mdc_lite_ctrl.py` | 纯 MicroPython（零依赖），**完全独立实现**（自带 CRC8/组帧/0xF0 解析，不依赖 `mdc_lib.py`，不用 `struct`/`machine`/`math`） |
+| 51/keil | `mdc_lite.h/.c` + `mdc_lite_ctrl.h/.c` | C89 兼容、英文注释；**完全独立实现**（自带 CRC8/组帧/流式 0xF0 解析，不依赖 `mdc_lib.h/.c`，大数组用 `xdata`） |
 
 **每个平台的 mdc_lite 目录 README 至少包含：** 功能、API 速览（两类各一行示例）、
 **串口接入示例**（用户实现收发，调用库打包/回调）、集成步骤、与 `mdc_lib` 的关系。

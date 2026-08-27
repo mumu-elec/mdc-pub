@@ -1,7 +1,7 @@
 # mdc_lib — Motor Driver Controller 通用调用库
 
 > **定位：** 通用调用库 —— 用函数封装指令，**返回要发送的字节**；并提供**接收数据解析**。串口收发由用户自己实现。
-> **协议依据：** [`../例程/common/协议规范.md`](../例程/common/协议规范.md)（布局 v2.1，config_t=231B）
+> **协议依据：** [`协议规范.md`](协议规范.md)（布局 v2.1，config_t=231B）
 > **API 规范：** [`API.md`](API.md)（所有平台实现的唯一依据，同一套 `md_*` 签名）
 
 ---
@@ -87,15 +87,15 @@ Serial2.write(buf, n);                          // 用户实现串口
 | `mdc_lite.*` | **只管调用**（send-only） | `md_lite_ctrl/stop/subscribe/unsubscribe` → 返回要发送的帧 |
 | `mdc_lite_ctrl.*` | **调用+回调接收** | 发送侧同上 + `MDLite(on_speed)` 流式收 `0xF0` → 回调四通道 rpm |
 
-各平台目录（python/cpp/stm32-hal/rp2040-csdk/esp32-esp-idf/esp32-arduino/rp2040-arduino/avr/esp8266-arduino/esp32-rp2040-esp8266-micropython/51-keil）均已提供以上两份极简库与 README。例程按「完整 / 极简控制 / 控制+回调」三类组织，见 [`../例程/README.md`](../例程/README.md)。
+各平台目录（python/cpp/stm32-hal/rp2040-csdk/esp32-esp-idf/esp32-arduino/rp2040-arduino/avr/esp8266-arduino/esp32-rp2040-esp8266-micropython/51-keil）均已提供以上两份极简库与 README。例程已合并进各平台目录的 `examples/`（完整 / 极简控制 / 控制+回调 三类），见下文「与例程的关系」。
 
-## 六、与「例程」的关系
+## 六、与例程的关系
 
-- `例程/`：完整可运行的示例程序（含串口收发），适合跑通与学习；按「完整 / 极简控制 / 控制+回调」三类组织。
-- `mdc_lib/`：可复用的协议库（只有打包/解析），适合集成进自己的工程。
-- 二者基于同一份协议规范，API 与例程中的协议代码语义一致。
+- 各平台目录下的 `examples/`：完整可运行的示例程序（含串口收发），适合跑通与学习；按「完整 / 极简控制 / 控制+回调」三类组织。
+- `mdc_lib/`：可复用的协议库（只有打包/解析），适合集成进自己的工程；`mdc_lite` 为独立实现的极简版（不依赖完整库）。
+- 主题与例程基于同一份 [`协议规范.md`](协议规范.md)，API 与例程中的协议代码语义一致。
 
-## 六、验证状态
+## 七、验证状态
 
 | 实现 | 校验 |
 |------|------|

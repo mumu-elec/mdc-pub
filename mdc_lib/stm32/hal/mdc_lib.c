@@ -2,7 +2,7 @@
  * @file    mdc_lib.c
  * @brief   Motor Driver Controller 通用调用库 —— 纯 C 实现（平台无关核心）
  *
- * 协议依据：../例程/common/协议规范.md（布局 v2.1，config_t = 231B）
+ * 协议依据：协议规范.md（布局 v2.1，config_t = 231B）
  * API 规范：../mdc_lib/API.md（统一 md_* 签名）
  *
  * 本文件不 include 任何硬件库头文件（HAL / pico_sdk / ESP-IDF 均不依赖），

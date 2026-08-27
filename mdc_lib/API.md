@@ -2,7 +2,7 @@
 
 > **库名：** mdc_lib（Motor Driver Controller Library）
 > **定位：** 通用调用库 —— 只负责 **打包要发送的数据** 与 **解析收到的数据**，**串口收发由用户自己实现**。
-> **协议依据：** `../例程/common/协议规范.md`（布局 v2.1，config_t=231B，24 条文本指令，18 条二进制命令）。
+> **协议依据：** `协议规范.md`（布局 v2.1，config_t=231B，24 条文本指令，18 条二进制命令）。
 > **适用范围：** python / cpp / stm32(hal) / esp32(arduino,micropython,esp-idf) / rp2040(arduino,micropython,c-sdk) / 51(keil) / avr(arduino_uno) / esp8266(arduino,micropython)。
 > **要求：** 所有平台实现**同一套 API 签名**，命名统一 `md_` 前缀。
 

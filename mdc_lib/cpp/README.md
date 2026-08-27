@@ -2,7 +2,7 @@
 
 > **库名：** mdc_lib（Motor Driver Controller Library）
 > **平台：** 宿主（PC / 树莓派 / Linux / Windows / macOS）C++17
-> **协议依据：** [`../API.md`](../API.md)（统一 API 规范，权威）+ [`../例程/common/协议规范.md`](../../例程/common/协议规范.md)（布局 v2.1，config_t=231B）
+> **协议依据：** [`../API.md`](../API.md)（统一 API 规范，权威）+ [`../协议规范.md`](../协议规范.md)（布局 v2.1，config_t=231B）
 > **特性：** 单头文件、命名空间 `mdc`、仅依赖标准库、UTF-8 中文注释、无硬件依赖（串口由用户实现）。
 
 ---

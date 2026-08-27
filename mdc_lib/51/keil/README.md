@@ -2,7 +2,7 @@
 
 > **目录：** `mdc_lib/51/keil/`
 > **定位：** 通用调用库 —— 只做**打包要发送的字节**与**解析收到的字节**，串口收发由你自己实现（8051 片上 UART 或模拟串口均可）。
-> **协议依据：** [`../../../例程/common/协议规范.md`](../../../例程/common/协议规范.md)（布局 v2.1，config_t=231B）
+> **协议依据：** [`../../协议规范.md`](../../协议规范.md)（布局 v2.1，config_t=231B）
 > **API 规范：** [`../API.md`](../API.md)（同一套 `md_*` 签名，本目录逐函数对应）
 
 ---
@@ -155,7 +155,7 @@ Keil 编译时不需要任何额外定义（`xdata` 是内建关键字，`__C51_
 | RAM 不够 | 按第二节裁剪：`MD_ENABLE_CONFIG=0` + 调小 `MD_PARSER_BUF` |
 | Keil 报未定义 `memcpy/memmove` | 确认已包含 `<string.h>`（本库已包含） |
 | 想用极简库 | 用同目录 `mdc_lite.h/.c`（只发送）或 `mdc_lite_ctrl.h/.c`（发送+速度回调），见第七节 |
-| `md_lite_ctrl_feed` 不回调 | 确认先调用 `md_lite_ctrl_init(&parser, cb)`；对方确实发了 `0xF0` 且 CRC 通过；`MD_PARSER_BUF` 够大（56B/72B 整帧分别为 60B/76B） |
+| `md_lite_ctrl_feed` 不回调 | 确认先调用 `md_lite_ctrl_init(cb)`；对方确实发了 `0xF0` 且 CRC 通过（解析器缓冲已内置，覆盖 56B/72B 整帧 60B/76B） |
 | 只用发送是否要引 mdc_lite_ctrl | 不必。只发送引 `mdc_lite` 即可；要回读转速才引 `mdc_lite_ctrl`（同时获得发送+回调） |
 
 ## 六、校验状态
@@ -166,9 +166,10 @@ Keil 编译时不需要任何额外定义（`xdata` 是内建关键字，`__C51_
 
 ## 七、mdc_lite 极简调用库（LITE API，极简控制 / 控制+回调）
 
-> **定位：** 在 `mdc_lib` 之上的一层**极简封装**，只服务一个场景——**上位机调参、下位机执行**：
+> **定位：** 在 `mdc_lib` 之上的一个**极简接口**，只服务一个场景——**上位机调参、下位机执行**：
 > 你只需告诉下位机要发什么控制量、并从下位机拿回实时转速。**不碰文本指令 / config_t 全字段 / SBUS / 波特率识别等**。
-> **依赖：** 全部复用同目录 `mdc_lib.h/.c`（打包/解析原语），**不重复实现协议**，字节布局 / CRC8(0x07, 初值0) / 帧格式 `[AA][CMD][LEN][DATA][CRC8]` 与 mdc_lib 完全一致。
+> **独立实现（本平台）：** `mdc_lite.*` / `mdc_lite_ctrl.*` 均为**自包含**实现——自带 CRC8(0x07, 初值0) 与帧格式 `[AA][CMD][LEN][DATA][CRC8]` 的打包/解析；
+> **不 `#include "mdc_lib.h"`、不调用 `md_bin_*`**，可与 mdc_lib 混用但互不依赖，字节布局与 mdc_lib 完全一致。
 
 **极简范围（只涉及这 4 条二进制命令）：** `0x31 MOTOR_CTRL`（发送）、`0x40/0x41 SUBSCRIBE/UNSUBSCRIBE`、`0xF0 STATUS_REPORT`（速度回调）。
 
@@ -180,11 +181,10 @@ Keil 编译时不需要任何额外定义（`xdata` 是内建关键字，`__C51_
 ### 7.1 功能
 
 - **发送侧（mdc_lite）**：`md_lite_ctrl`（0x31 四通道目标）、`md_lite_stop`（全零急停）、`md_lite_subscribe`（0x40，周期上报）、`md_lite_unsubscribe`（0x41）。全部返回**要发送的整帧字节**（含 SYNC+CRC8），写入你的发送缓冲；`cap` 不足或参数非法返回 `0`。
-- **接收回调（mdc_lite_ctrl）**：`md_lite_ctrl_init` 注册速度回调并初始化流式解析器；`md_lite_ctrl_feed` 逐字节喂入，收到完整且 CRC 通过的 `0xF0 STATUS_REPORT`（56B/72B 自动兼容）时解析出 `rpm[4]` 并调用回调。其他帧 / 噪声忽略，可与其他流量混流。
+- **接收回调（mdc_lite_ctrl）**：`md_lite_ctrl_init(cb)` 注册速度回调并复位**单实例**流式解析器；`md_lite_ctrl_feed(byte)` 逐字节喂入，收到完整且 CRC 通过的 `0xF0 STATUS_REPORT`（56B/72B 自动兼容）时解析出 `rpm[4]` 并调用回调。其他帧 / 噪声忽略，可与其他流量混流。
 
 **针对 8051 的裁剪：**
-- 解析器实例与发送缓冲**都要放 xdata**（见 7.3 示例）。
-- 回调与中间态 `md_status_t`（约 73B）本库用 `static xdata` 存放，不占 8051 内部 RAM；仅支持**单路接收**（一个 UART 链路，8051 常规情形）。
+- 解析器缓冲区与中间状态位于本文件内 `static xdata`（外部 RAM 一个 `MD_LITE_CTRL_BUF` 字节滑窗），不占 8051 内部 RAM；仅支持**单路接收**（一个 UART 链路，8051 常规情形）。
 
 ### 7.2 API 速览
 
@@ -198,8 +198,8 @@ n = md_lite_unsubscribe(g_tx, sizeof(g_tx));                     /* 0x41 -> 4B *
 
 /* 发送 + 速度回调：引 mdc_lite_ctrl.h（内含 mdc_lite.h） */
 #include "mdc_lite_ctrl.h"
-md_lite_ctrl_init(&g_parser, on_speed);   /* 注册回调 + 初始化解析器 */
-md_lite_ctrl_feed(&g_parser, byte);       /* UART 中断里逐字节喂入 */
+md_lite_ctrl_init(on_speed);              /* 注册回调 + 复位解析器 */
+md_lite_ctrl_feed(byte);                  /* UART 中断里逐字节喂入 */
 ```
 
 ### 7.3 串口接入示例（Keil C51）
@@ -207,8 +207,6 @@ md_lite_ctrl_feed(&g_parser, byte);       /* UART 中断里逐字节喂入 */
 **（a）只发送（send-only）——最小示例：**
 
 ```c
-#define MD_ENABLE_CONFIG 0                    /* 例程不用 config 全字段，省 231B xdata */
-#define MD_PARSER_BUF    64                   /* 只收 STATUS 帧（56B/72B 整帧 60B/76B）；若要收 231B READ_PARAM 应答需 >=235 */
 #include "mdc_lite.h"
 #include <reg52.h>
 
@@ -235,13 +233,10 @@ void demo_send_only(void)
 **（b）发送 + 速度回调（mdc_lite_ctrl）——最小示例：**
 
 ```c
-#define MD_ENABLE_CONFIG 0
-#define MD_PARSER_BUF    64
 #include "mdc_lite_ctrl.h"
 #include <reg52.h>
 
-xdata md_parser_t g_parser;                   /* 解析器缓冲（MD_PARSER_BUF 字节）放 xdata */
-xdata uint8_t     g_tx[20];
+xdata uint8_t g_tx[20];
 
 void on_speed(const int32_t rpm[4])           /* 速度回调：四通道转速（int32） */
 {
@@ -256,14 +251,14 @@ void user_send(const uint8_t* buf, uint16_t n)
 
 void uart_isr(void) interrupt 4                /* UART1 接收中断里逐字节喂入 */
 {
-    if (RI) { RI = 0; md_lite_ctrl_feed(&g_parser, SBUF); }
+    if (RI) { RI = 0; md_lite_ctrl_feed(SBUF); }
     if (TI) { TI = 0; }
 }
 
 void demo_ctrl_callback(void)
 {
     uint16_t n;
-    md_lite_ctrl_init(&g_parser, on_speed);          /* 注册回调 */
+    md_lite_ctrl_init(on_speed);                     /* 注册回调 */
     n = md_lite_subscribe(50, g_tx, sizeof(g_tx));   /* 订阅（收速度的前提，固件钳位 >=20ms） */
     user_send(g_tx, n);
     n = md_lite_ctrl(100, 0, 0, 0, g_tx, sizeof(g_tx));
@@ -275,23 +270,21 @@ void demo_ctrl_callback(void)
 
 ### 7.4 集成步骤
 
-1. 在 Keil 工程加入 `mdc_lib.h/.c` + `mdc_lite.h/.c`（仅发送）或再加 `mdc_lite_ctrl.h/.c`（要回读转速）。右键 Source Group → Add Existing Files…；并按上文在 Include Paths 加头文件目录。
-2. 在包含头文件前（或工程级 Preprocessor Symbols → Define）写 `MD_ENABLE_CONFIG=0`、`MD_PARSER_BUF=64` 以裁剪；这样 `mdc_lib.c` 会编译掉 config 全字段函数与 231B xdata 缓冲。
-3. 发送缓冲 / 解析器放 xdata（见 7.3）。`md_lite_ctrl_init` 只需调用一次，在开始 `md_lite_ctrl_feed` 前完成。
-4. 实现串口收发（用户侧），用 `md_lite_*` 打包、`md_lite_ctrl_feed` 喂字节。
+1. 在 Keil 工程加入 `mdc_lite.h/.c`（仅发送）或再加 `mdc_lite_ctrl.h/.c`（要回读转速）。**`mdc_lite` 为独立实现，无需再一起加 `mdc_lib.h/.c`**。右键 Source Group → Add Existing Files…，并按上文在 Include Paths 加头文件目录。
+2. 发送缓冲放 xdata（见 7.3）。`md_lite_ctrl_init` 只需调用一次，在开始 `md_lite_ctrl_feed` 前完成。
+3. 实现串口收发（用户侧），用 `md_lite_*` 打包、`md_lite_ctrl_feed` 喂字节。
 
 ### 7.5 与 mdc_lib 的关系
 
-- `mdc_lite` 是 `mdc_lib` 的**薄封装**：`md_lite_ctrl` == `md_bin_motor_ctrl`、`md_lite_subscribe` == `md_bin_subscribe`、`md_lite_unsubscribe` == `md_bin_unsubscribe`；`mdc_lite_ctrl` 复用 `md_parser_t` / `md_parser_feed` / `md_parse_status`。**字节布局、CRC、帧格式完全一致**，可与 mdc_lib 混用。
-- 差别只在命名（`md_lite_` 前缀）与**关注范围收窄**（只 4 条命令），不含文本指令 / config_t 全字段 / SBUS。协议层仍由 mdc_lib 提供，mdc_lite 不重复实现。
-- `md_lite_stop` 是对 `md_lite_ctrl(0,0,0,0)` 的便捷封装，不新增协议含义。
+- `mdc_lite` / `mdc_lite_ctrl` 为**独立实现**：不再复用 `mdc_lib` 的 `md_bin_*` / `md_parser_*` / `md_parse_status`，而是自带 CRC8、组帧、`0xAA` 滑窗流式解析与 `rpm` 提取。**字节布局、CRC、帧格式与 mdc_lib 完全一致**，可与之混用。
+- 差别只在命名（`md_lite_` 前缀）与**关注范围收窄**（只 4 条命令），不含文本指令 / config_t 全字段 / SBUS。
 
 ### 7.6 一致性验证
 
 本目录 `test_mdc_lite.c`（**host-only 自检，不是 51 目标代码，不要把该文件加入 Keil 工程**）已在主机 gcc 上验证：
 
 ```
-gcc -std=c89 -DMD_ENABLE_CONFIG=0 -Wall -Wextra -o ttest mdc_lib.c mdc_lite.c mdc_lite_ctrl.c test_mdc_lite.c
+gcc -std=c89 -Wall -Wextra -pedantic -o ttest mdc_lite.c mdc_lite_ctrl.c test_mdc_lite.c
 ./ttest        -> 打印 "ALL OK"，退出码 0
 ```
 

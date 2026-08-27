@@ -1,10 +1,11 @@
 # mdc_lite — STM32 HAL 平台（纯 C 极简调用库）
 
-> **目录：** `mdc_lib/stm32/hal/`（与 `mdc_lib.h/.c` 同目录）
-> **定位：** 在完整 `mdc_lib` 之上的**极简封装** —— 只做「**上一句话告诉下位机发什么控制量、从下位机拿回实时转速**」。
+> **目录：** `mdc_lib/stm32/hal/`（与 `mdc_lib.h/.c` 同目录，但本极简层**不依赖**它）
+> **定位：** 只做「**告诉下位机发什么控制量、从下位机拿回实时转速**」的**独立极简调用库**。
 > **只涉及 4 条二进制命令：** `0x31` 控制、`0x40/0x41` 订阅/退订、`0xF0` 状态上报（速度回调）。
 > **规范依据：** [`../LITE.md`](../LITE.md)（极简 API 规范，本目录与其逐项对应）
-> **底层复用：** 同目录 `mdc_lib`（API.md 的打包/解析原语），不重复造轮子、不改变字节布局。
+> **独立实现：** `mdc_lite.*` 自带 CRC8、组帧与流式解析，**不 include "mdc_lib.h"**、不调用
+> `md_bin_motor_*`/`md_parser_*` 等任何完整库原语；只用到标准 `<stdint.h>`，帧字节布局与 `mdc_lib` 完全一致。
 
 ---
 
@@ -12,7 +13,7 @@
 
 - **零硬件依赖**：`mdc_lite.c` / `mdc_lite_ctrl.c` 只 include `<stdint.h>`，不 include 任何 HAL 头文件；任何 STM32 系列（F1/F4/H7…）或其它 MCU 都能编译。
 - **send-only**（`mdc_lite`）：只打包「要发送的控制帧」交给你发送，**不解析任何回包**。
-  - `md_lite_ctrl(m0..m3, out, cap)`：0x31 四通道控制帧（直接委托 `md_bin_motor_ctrl`）。
+  - `md_lite_ctrl(m0..m3, out, cap)`：0x31 四通道控制帧（**自实现**组帧，非委托 `md_bin_motor_ctrl`）。
   - `md_lite_stop`：`ctrl(0,0,0,0)` 全零控制帧（急停/退出）。
   - `md_lite_subscribe(ms, out, cap)`：0x40 开启状态上报（收速度的前提）。
   - `md_lite_unsubscribe(out, cap)`：0x41 关闭状态上报（善后）。
@@ -32,7 +33,7 @@ uint16_t md_lite_unsubscribe(uint8_t* out, uint16_t cap);
 
 /* control + speed callback (mdc_lite_ctrl.h，含 send-only 全部函数) */
 typedef void (*md_lite_on_speed_t)(const int32_t rpm[4]);
-typedef struct { md_parser_t parser; md_lite_on_speed_t on_speed; } md_lite_ctrl_t;
+typedef struct { uint8_t buf[MD_LITE_BUF_SIZE]; uint16_t len; md_lite_on_speed_t on_speed; } md_lite_ctrl_t;
 void md_lite_ctrl_init(md_lite_ctrl_t* c, md_lite_on_speed_t cb);
 void md_lite_ctrl_feed(md_lite_ctrl_t* c, uint8_t byte);
 ```
@@ -120,14 +121,17 @@ void ctrl_cb_demo(void)
 | | mdc_lib（完整） | mdc_lite（极简） |
 |---|---|---|
 | 关注范围 | 文本指令 + config 全字段读写 + SBUS/检测/波特率 + 18 条二进制命令 | 只有 0x31/0x40/0x41/0xF0 4 条 |
-| 字节布局 / CRC / 帧格式 | 协议规范 v2.1 | **与 mdc_lib 完全一致**（本目录直接复用，未重新实现） |
-| 实现方式 | 独立实现全套打包/解析 | `mdc_lite.c` 触发 `md_bin_motor_ctrl/subscribe/unsubscribe`；`mdc_lite_ctrl.c` 按字节喂 `md_parser_feed`、用 `md_parse_status` 取 rpm |
+| 字节布局 / CRC / 帧格式 | 协议规范 v2.1 | **与 mdc_lib 完全一致**（独立实现，仅字节兼容，不共享代码） |
+| 实现方式 | 独立实现全套打包/解析 | `mdc_lite.c` 自带 CRC8/组帧；`mdc_lite_ctrl.c` 自带滑窗找 0xAA + CRC8 校验的流式解析，取 rpm 后回调 |
+| 依赖 | 无（纯 C） | 只 include 同族 `mdc_lite.h`，**不依赖 mdc_lib.h** |
 | 需要哪个 | 全部功能 | 只有「上位机调参 / 下位机执行」的简单场景 |
 
 需要 `md_parse_ack`/`md_parse_config` 等完整 API 时，直接 `#include "mdc_lib.h"` 即可（本目录 `mdc_lib` 与极简层共存，互不冲突）。
 
 ## 六、校验状态
 
-本平台 `mdc_lite.c` / `mdc_lite_ctrl.c` 已通过本机 `gcc -std=c99 -Wall -Wextra -pedantic -c` 零警告校验，
-并经一轮字节向量断言（CRC 0x15/0xF4、`subscribe(50)` 帧 `AA 40 02 32 00 9E`、`unsubscribe` 帧 `AA 41 00 4E`、
-`ctrl(100,-200,0,300)` DATA、60B/72B 0xF0 流式回调 rpm 四值）全部通过。
+本平台 `mdc_lite.c` / `mdc_lite_ctrl.c` 为**独立实现**（不依赖 `mdc_lib.h`），已通过本机
+`gcc -std=c99 -Wall -Wextra -pedantic -c` 零警告校验，并经一轮字节向量断言（CRC 0x15/0xF4、
+`subscribe(50)` 帧 `AA 40 02 32 00 9E`、`unsubscribe` 帧 `AA 41 00 4E`、
+`ctrl(100,-200,0,300)` DATA、56B/72B 0xF0 流式回调 rpm 四值 + 噪声/损坏帧不触发）全部通过。
+三个平台（stm32/hal、rp2040/c-sdk、esp32/esp-idf）的 `mdc_lite.*` 代码逐字节一致。

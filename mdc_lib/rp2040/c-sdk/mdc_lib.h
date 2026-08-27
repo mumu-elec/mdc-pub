@@ -2,7 +2,7 @@
  * @file    mdc_lib.h
  * @brief   Motor Driver Controller 通用调用库（STM32 HAL 平台）
  *
- * 协议依据：../例程/common/协议规范.md（布局 v2.1，config_t = 231B，18 条二进制命令）
+ * 协议依据：协议规范.md（布局 v2.1，config_t = 231B，18 条二进制命令）
  * API 规范：../mdc_lib/API.md（所有平台同一套 md_* 签名）
  *
  * 定位：纯打包 / 纯解析 —— 不 include 任何 HAL 头文件，不碰串口外设。

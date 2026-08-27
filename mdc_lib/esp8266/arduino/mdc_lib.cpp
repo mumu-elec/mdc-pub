@@ -2,7 +2,7 @@
  * @file    mdc_lib.cpp
  * @brief   Motor Driver Controller 通用调用库 —— 纯 C++ 实现（Arduino 平台）
  *
- * 协议依据：../例程/common/协议规范.md（布局 v2.1，config_t = 231B）
+ * 协议依据：协议规范.md（布局 v2.1，config_t = 231B）
  * API 规范：../API.md（统一 md_* 签名，C 风格输出缓冲）
  *
  * 本文件不 include 任何 Arduino / ESP 头文件（纯 C++，C++11 兼容），

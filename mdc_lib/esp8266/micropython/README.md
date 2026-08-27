@@ -2,7 +2,7 @@
 
 > 四路直流电机驱动器（Motor Driver Controller，STM32F401 + TB6612）通信协议库的 MicroPython 移植。
 > **只负责「打包」与「解析」，串口收发由你自己实现**；纯 MicroPython **零依赖**（无 `machine` / `ustruct` / `struct` / `math` 等任何 import），在任意 MicroPython 板或 CPython 上均可直接 `import`。
-> 协议依据：[`../../例程/common/协议规范.md`](../../例程/common/协议规范.md)（布局 v2.1，config_t=231B，24 条文本指令，18 条二进制命令）；API 规范：[`../../API.md`](../../API.md)。
+> 协议依据：[`../../协议规范.md`](../../协议规范.md)（布局 v2.1，config_t=231B，24 条文本指令，18 条二进制命令）；API 规范：[`../../API.md`](../../API.md)。
 
 ---
 
