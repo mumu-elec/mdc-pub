@@ -36,7 +36,7 @@ static void dump(const char* tag, const std::vector<uint8_t>& frame) {
 }
 
 // 构造一帧 56B 的 0xF0 STATUS_REPORT（enc@0 + tgt@16 + rpm@32 + frame/ok cnt@48），
-// 仅把四通道 rpm 填成指定值，其余字段为 0，用 mdc::build_frame 组帧（含 CRC）。
+// 仅把四通道 rpm 填成指定值，其余字段为 0；用 mdc_lite 的 crc8 手工组帧 [AA][F0][38][payload][crc8]。
 // 真实使用时该帧由下位机经串口主动推送，由库解析，无需自己构造。
 static std::vector<uint8_t> make_status56(const int32_t rpm[4]) {
     std::vector<uint8_t> p(56, 0);
@@ -47,7 +47,12 @@ static std::vector<uint8_t> make_status56(const int32_t rpm[4]) {
         p[32 + i * 4 + 2] = static_cast<uint8_t>((u >> 16) & 0xFF);
         p[32 + i * 4 + 3] = static_cast<uint8_t>((u >> 24) & 0xFF);
     }
-    return mdc::build_frame(0xF0, p);
+    std::vector<uint8_t> body{0xF0, 56};                 // CMD + LEN
+    body.insert(body.end(), p.begin(), p.end());
+    body.push_back(mdc_lite::crc8(body));                // CRC = CMD+LEN+DATA
+    std::vector<uint8_t> frame{0xAA};
+    frame.insert(frame.end(), body.begin(), body.end());
+    return frame;
 }
 
 int main() {

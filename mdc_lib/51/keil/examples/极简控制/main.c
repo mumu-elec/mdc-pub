@@ -15,16 +15,10 @@
  *  parse any reply - if you need the four channel RPM back from the 0xF0
  *  STATUS_REPORT, use the 控制+回调 example (mdc_lite_ctrl).
  *
- *  Protocol layer is provided entirely by mdc_lib/mdc_lite:
+ *  Protocol layer is provided entirely by mdc_lite (self-contained):
  *    md_lite_ctrl / md_lite_stop / md_lite_subscribe / md_lite_unsubscribe
  *  This file only implements the UART I/O (user side).
- *
- *  Tuning: MD_ENABLE_CONFIG=0 and MD_PARSER_BUF=64 must be set before the
- *  include; for the same effect in mdc_lib.c add MD_ENABLE_CONFIG=0 to the
- *  Keil project defines (see README.md).
  *=============================================================================*/
-
-#define MD_ENABLE_CONFIG 0
 
 #include "mdc_lite.h"
 
