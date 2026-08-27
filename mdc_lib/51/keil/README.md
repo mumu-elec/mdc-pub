@@ -154,7 +154,145 @@ Keil 编译时不需要任何额外定义（`xdata` 是内建关键字，`__C51_
 | 收不到 READ_PARAM 应答 | 231B 应答整帧 235B，`MD_PARSER_BUF` 需 ≥ 235，或用帧级 `md_parse_frame` |
 | RAM 不够 | 按第二节裁剪：`MD_ENABLE_CONFIG=0` + 调小 `MD_PARSER_BUF` |
 | Keil 报未定义 `memcpy/memmove` | 确认已包含 `<string.h>`（本库已包含） |
+| 想用极简库 | 用同目录 `mdc_lite.h/.c`（只发送）或 `mdc_lite_ctrl.h/.c`（发送+速度回调），见第七节 |
+| `md_lite_ctrl_feed` 不回调 | 确认先调用 `md_lite_ctrl_init(&parser, cb)`；对方确实发了 `0xF0` 且 CRC 通过；`MD_PARSER_BUF` 够大（56B/72B 整帧分别为 60B/76B） |
+| 只用发送是否要引 mdc_lite_ctrl | 不必。只发送引 `mdc_lite` 即可；要回读转速才引 `mdc_lite_ctrl`（同时获得发送+回调） |
 
 ## 六、校验状态
 
 本平台 `mdc_lib.c` 已通过本机 `gcc -std=c89 -fsyntax-only` 与 `gcc -std=c11 -Wall -Wextra -fsyntax-only` 校验（`xdata` 由 `MD_51_XDATA` 宏桥接，无需额外参数），并与 API.md §8 验证向量（CRC 0x15/0xF4、PING 帧 `AA 01 00 15`、MOTOR_CTRL DATA、config 往返、流式解析器）逐项比对通过。
+
+本平台的极简库 `mdc_lite.c` / `mdc_lite_ctrl.c` 亦通过本机 `gcc -std=c89 -Wall -Wextra -pedantic -fsyntax-only`（零告警）；`test_mdc_lite.c`（host-only 自检）编译运行输出 `ALL OK`，逐项通过 LITE.md §6 一致性用例（见 7.6）。
+
+## 七、mdc_lite 极简调用库（LITE API，极简控制 / 控制+回调）
+
+> **定位：** 在 `mdc_lib` 之上的一层**极简封装**，只服务一个场景——**上位机调参、下位机执行**：
+> 你只需告诉下位机要发什么控制量、并从下位机拿回实时转速。**不碰文本指令 / config_t 全字段 / SBUS / 波特率识别等**。
+> **依赖：** 全部复用同目录 `mdc_lib.h/.c`（打包/解析原语），**不重复实现协议**，字节布局 / CRC8(0x07, 初值0) / 帧格式 `[AA][CMD][LEN][DATA][CRC8]` 与 mdc_lib 完全一致。
+
+**极简范围（只涉及这 4 条二进制命令）：** `0x31 MOTOR_CTRL`（发送）、`0x40/0x41 SUBSCRIBE/UNSUBSCRIBE`、`0xF0 STATUS_REPORT`（速度回调）。
+
+| 文件 | 形态 | 内容 |
+|------|------|------|
+| `mdc_lite.h/.c` | **只管调用（send-only）** | 只打包要发送的控制帧（0x31/0x40/0x41），不做任何接收解析 |
+| `mdc_lite_ctrl.h/.c` | **调用+回调接收（control + speed callback）** | 在 send-only 基础上，流式接收 `0xF0` 并把四通道转速回调给用户 |
+
+### 7.1 功能
+
+- **发送侧（mdc_lite）**：`md_lite_ctrl`（0x31 四通道目标）、`md_lite_stop`（全零急停）、`md_lite_subscribe`（0x40，周期上报）、`md_lite_unsubscribe`（0x41）。全部返回**要发送的整帧字节**（含 SYNC+CRC8），写入你的发送缓冲；`cap` 不足或参数非法返回 `0`。
+- **接收回调（mdc_lite_ctrl）**：`md_lite_ctrl_init` 注册速度回调并初始化流式解析器；`md_lite_ctrl_feed` 逐字节喂入，收到完整且 CRC 通过的 `0xF0 STATUS_REPORT`（56B/72B 自动兼容）时解析出 `rpm[4]` 并调用回调。其他帧 / 噪声忽略，可与其他流量混流。
+
+**针对 8051 的裁剪：**
+- 解析器实例与发送缓冲**都要放 xdata**（见 7.3 示例）。
+- 回调与中间态 `md_status_t`（约 73B）本库用 `static xdata` 存放，不占 8051 内部 RAM；仅支持**单路接收**（一个 UART 链路，8051 常规情形）。
+
+### 7.2 API 速览
+
+```c
+/* 只用发送：引 mdc_lite.h */
+#include "mdc_lite.h"
+uint16_t n = md_lite_ctrl(300, 0, -150, 0, g_tx, sizeof(g_tx));  /* 0x31 -> 20B */
+n = md_lite_stop(g_tx, sizeof(g_tx));                            /* 0x31 全零 -> 20B */
+n = md_lite_subscribe(50, g_tx, sizeof(g_tx));                   /* 0x40 -> 6B */
+n = md_lite_unsubscribe(g_tx, sizeof(g_tx));                     /* 0x41 -> 4B */
+
+/* 发送 + 速度回调：引 mdc_lite_ctrl.h（内含 mdc_lite.h） */
+#include "mdc_lite_ctrl.h"
+md_lite_ctrl_init(&g_parser, on_speed);   /* 注册回调 + 初始化解析器 */
+md_lite_ctrl_feed(&g_parser, byte);       /* UART 中断里逐字节喂入 */
+```
+
+### 7.3 串口接入示例（Keil C51）
+
+**（a）只发送（send-only）——最小示例：**
+
+```c
+#define MD_ENABLE_CONFIG 0                    /* 例程不用 config 全字段，省 231B xdata */
+#define MD_PARSER_BUF    64                   /* 只收 STATUS 帧（56B/72B 整帧 60B/76B）；若要收 231B READ_PARAM 应答需 >=235 */
+#include "mdc_lite.h"
+#include <reg52.h>
+
+xdata uint8_t g_tx[20];                       /* 发送缓冲放 xdata */
+
+void user_send(const uint8_t* buf, uint16_t n)
+{
+    uint16_t i;
+    for (i = 0; i < n; i++) { SBUF = buf[i]; while (!TI); TI = 0; }
+}
+
+void demo_send_only(void)
+{
+    uint16_t n;
+    n = md_lite_ctrl(300, 0, -150, 0, g_tx, sizeof(g_tx));  /* 四通道目标（int32 LE） */
+    user_send(g_tx, n);
+    n = md_lite_stop(g_tx, sizeof(g_tx));                   /* 急停/退出 */
+    user_send(g_tx, n);
+    n = md_lite_unsubscribe(g_tx, sizeof(g_tx));            /* 关闭上报（善后，可选） */
+    user_send(g_tx, n);
+}
+```
+
+**（b）发送 + 速度回调（mdc_lite_ctrl）——最小示例：**
+
+```c
+#define MD_ENABLE_CONFIG 0
+#define MD_PARSER_BUF    64
+#include "mdc_lite_ctrl.h"
+#include <reg52.h>
+
+xdata md_parser_t g_parser;                   /* 解析器缓冲（MD_PARSER_BUF 字节）放 xdata */
+xdata uint8_t     g_tx[20];
+
+void on_speed(const int32_t rpm[4])           /* 速度回调：四通道转速（int32） */
+{
+    /* 立即消费 rpm[0..3]；此指针在返回后失效，需保留请自行拷出 */
+}
+
+void user_send(const uint8_t* buf, uint16_t n)
+{
+    uint16_t i;
+    for (i = 0; i < n; i++) { SBUF = buf[i]; while (!TI); TI = 0; }
+}
+
+void uart_isr(void) interrupt 4                /* UART1 接收中断里逐字节喂入 */
+{
+    if (RI) { RI = 0; md_lite_ctrl_feed(&g_parser, SBUF); }
+    if (TI) { TI = 0; }
+}
+
+void demo_ctrl_callback(void)
+{
+    uint16_t n;
+    md_lite_ctrl_init(&g_parser, on_speed);          /* 注册回调 */
+    n = md_lite_subscribe(50, g_tx, sizeof(g_tx));   /* 订阅（收速度的前提，固件钳位 >=20ms） */
+    user_send(g_tx, n);
+    n = md_lite_ctrl(100, 0, 0, 0, g_tx, sizeof(g_tx));
+    user_send(g_tx, n);
+}
+```
+
+> **要点：** 发送函数返回后即可发出；`md_lite_ctrl_feed` 只在完整 `0xF0` 帧到达时才调用回调。若一个工程只发送，引 `mdc_lite`；若还需回读转速，引 `mdc_lite_ctrl`（同时获得发送 + 回调）。
+
+### 7.4 集成步骤
+
+1. 在 Keil 工程加入 `mdc_lib.h/.c` + `mdc_lite.h/.c`（仅发送）或再加 `mdc_lite_ctrl.h/.c`（要回读转速）。右键 Source Group → Add Existing Files…；并按上文在 Include Paths 加头文件目录。
+2. 在包含头文件前（或工程级 Preprocessor Symbols → Define）写 `MD_ENABLE_CONFIG=0`、`MD_PARSER_BUF=64` 以裁剪；这样 `mdc_lib.c` 会编译掉 config 全字段函数与 231B xdata 缓冲。
+3. 发送缓冲 / 解析器放 xdata（见 7.3）。`md_lite_ctrl_init` 只需调用一次，在开始 `md_lite_ctrl_feed` 前完成。
+4. 实现串口收发（用户侧），用 `md_lite_*` 打包、`md_lite_ctrl_feed` 喂字节。
+
+### 7.5 与 mdc_lib 的关系
+
+- `mdc_lite` 是 `mdc_lib` 的**薄封装**：`md_lite_ctrl` == `md_bin_motor_ctrl`、`md_lite_subscribe` == `md_bin_subscribe`、`md_lite_unsubscribe` == `md_bin_unsubscribe`；`mdc_lite_ctrl` 复用 `md_parser_t` / `md_parser_feed` / `md_parse_status`。**字节布局、CRC、帧格式完全一致**，可与 mdc_lib 混用。
+- 差别只在命名（`md_lite_` 前缀）与**关注范围收窄**（只 4 条命令），不含文本指令 / config_t 全字段 / SBUS。协议层仍由 mdc_lib 提供，mdc_lite 不重复实现。
+- `md_lite_stop` 是对 `md_lite_ctrl(0,0,0,0)` 的便捷封装，不新增协议含义。
+
+### 7.6 一致性验证
+
+本目录 `test_mdc_lite.c`（**host-only 自检，不是 51 目标代码，不要把该文件加入 Keil 工程**）已在主机 gcc 上验证：
+
+```
+gcc -std=c89 -DMD_ENABLE_CONFIG=0 -Wall -Wextra -o ttest mdc_lib.c mdc_lite.c mdc_lite_ctrl.c test_mdc_lite.c
+./ttest        -> 打印 "ALL OK"，退出码 0
+```
+
+覆盖了 LITE.md §6 全部一致性用例：`crc8({0x01,0x00})==0x15`、`crc8("123456789")==0xF4`、`subscribe(50)` 帧 `AA 40 02 32 00 <crc>`、`md_lite_ctrl(100,-200,0,300)` DATA `64 00 00 00 38 FF FF FF 00 00 00 00 2C 01 00 00`、`stop`/`unsubscribe` 帧，以及流式接收：噪声 + 非 `0xF0` 帧不触发回调、`0xF0` 56B/72B 均正确解析出四通道 rpm。

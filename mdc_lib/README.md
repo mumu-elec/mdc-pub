@@ -77,9 +77,21 @@ Serial2.write(buf, n);                          // 用户实现串口
 
 > 完整签名、字节布局、验证向量见 [`API.md`](API.md)。
 
-## 五、与「例程」的关系
+## 五、mdc_lite 极简库（上位机调参、下位机执行）
 
-- `例程/`：完整可运行的示例程序（含串口收发），适合跑通与学习。
+> 在完整版 `mdc_lib` 之上新增一层**极简封装** `mdc_lite`，规范见 [`LITE.md`](LITE.md)。
+> 只关注 4 条命令：`0x31` 控制帧、`0x40/0x41` 订阅/退订、`0xF0` 速度回调。其余一律不管。
+
+| 库文件 | 形态 | 内容 |
+|--------|------|------|
+| `mdc_lite.*` | **只管调用**（send-only） | `md_lite_ctrl/stop/subscribe/unsubscribe` → 返回要发送的帧 |
+| `mdc_lite_ctrl.*` | **调用+回调接收** | 发送侧同上 + `MDLite(on_speed)` 流式收 `0xF0` → 回调四通道 rpm |
+
+各平台目录（python/cpp/stm32-hal/rp2040-csdk/esp32-esp-idf/esp32-arduino/rp2040-arduino/avr/esp8266-arduino/esp32-rp2040-esp8266-micropython/51-keil）均已提供以上两份极简库与 README。例程按「完整 / 极简控制 / 控制+回调」三类组织，见 [`../例程/README.md`](../例程/README.md)。
+
+## 六、与「例程」的关系
+
+- `例程/`：完整可运行的示例程序（含串口收发），适合跑通与学习；按「完整 / 极简控制 / 控制+回调」三类组织。
 - `mdc_lib/`：可复用的协议库（只有打包/解析），适合集成进自己的工程。
 - 二者基于同一份协议规范，API 与例程中的协议代码语义一致。
 

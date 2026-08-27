@@ -11,6 +11,7 @@
 | 文件 | 说明 |
 |------|------|
 | `mdc_lib.py` | 全量实现：函数式 API（`md_*`）+ `MDParser` 流式解析器 + `MDC` 便捷类 |
+| `mdc_lite.py` + `mdc_lite_ctrl.py` | **极简调用层（mdc_lite）**：只管发送控制帧 / 发送+速度回调，见 [README_LITE.md](README_LITE.md) |
 
 > **三平台共用同一份代码**：`esp32/micropython`、`rp2040/micropython`、`esp8266/micropython` 下的 `mdc_lib.py` 内容完全一致（哈希一致），仅本 README 的接线/引脚不同。
 
