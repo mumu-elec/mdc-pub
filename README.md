@@ -1,4 +1,5 @@
 # Motor Driver Controller — 发布页
+- 在线发布页：https://mumu-elec.github.io/mdc-pub
 
 基于 STM32F401 + TB6612 的四路直流电机驱动器（Bootloader + 主固件 + Web 上位机）的**发布仓库**。
 
