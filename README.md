@@ -15,6 +15,7 @@
 | 主固件 | v1.1.0 | `release/motor_driver_ctrl-v1.1.0.bin` / `.hex` |
 | Bootloader | v1.0 | `release/bootloader-v1.0.bin` |
 | 技术手册 | v1.0 | `docs/technical-manual.md` |
+| AI 接口手册 | v1.0 | `docs/ai-manual.md`（面向 AI Agent / 上位机程序的公开机器接口，单一整合稿：接口手册 + 一致性验证 + 外部 AI 测试 + 交付报告） |
 
 ## 目录结构
 
@@ -23,7 +24,7 @@ motor_driver_control/
 ├── index.html              # 发布页（下载中心 + 网站入口）
 ├── web/index.html          # 在线上位机（单文件，自包含）
 ├── release/                # 发布物（上位机 / 固件 / BL）
-└── docs/                   # 技术手册（v1.0）
+└── docs/                   # 技术手册（v1.0）· AI 接口手册（v1.0）
 ```
 
 ## 更新发布物
