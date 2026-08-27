@@ -12,8 +12,8 @@
 | 类别 | 版本 | 文件 |
 |------|------|------|
 | Web 上位机 | v1.0 | `release/电机上位机-v1.0.html`（离线单文件） |
-| 主固件 | v1.1.0 | `release/motor_driver_ctrl-v1.1.0.bin` / `.hex` / `.elf` |
-| Bootloader | v1.0 | `release/bootloader-v1.0.bin` / `.elf` |
+| 主固件 | v1.1.0 | `release/motor_driver_ctrl-v1.1.0.bin` / `.hex` |
+| Bootloader | v1.0 | `release/bootloader-v1.0.bin` |
 | 技术手册 | v1.0 | `docs/technical-manual.md` |
 
 ## 目录结构
