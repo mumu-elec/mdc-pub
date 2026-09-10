@@ -315,7 +315,7 @@ input[type=checkbox]{color-scheme:light}
 
 <div id="left">
   <div id="left-header">
-  <div id="ver-info" style="display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px"><span>上位机 v1.0 | 硬件 -- | 固件 --</span> <span class="tip" data-tip="硬件版本 vA.B.C
+  <div id="ver-info" style="display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px"><span>上位机 v1.1 | 硬件 -- | 固件 --</span> <span class="tip" data-tip="硬件版本 vA.B.C
   A: MCU引脚版本（MCU IO引出方案）
   B: 硬件次版本（非MCU IO控制差别）
   C: 变体号（硬件小改版/BUG修复版）
@@ -593,11 +593,11 @@ USB 优先：控制端为上位机">?</span></div></div>
 <script>
 
 // ====== Host version (vD.F: D=协议版本, F=Bug修复) ======
-const HOST_VER = {A:1, B:1, C:0};  // A=硬件主版本(与固件A匹配), B=协议版本(与固件D匹配), C=上位机Bug修复
+const HOST_VER = {A:1, B:1, C:1};  // A=硬件主版本(与固件A匹配), B=协议版本(与固件D匹配), C=上位机Bug修复
 
 // ====== Binary protocol constants ======
-const SYNC=0xAA, CMD_READ=0x10, CMD_WRITE=0x11, CMD_WRITE_FIELD=0x12, CMD_SAVE=0x20, CMD_SUB=0x40, CMD_UNSUB=0x41, CMD_DBG=0x43, CMD_DBG_SPEED=0x44, CMD_REBOOT=0x53, CONFIG_SIZE=250;
-const BL_SYNC=0xA5, BL_ERASE=0x50, BL_WRITE=0x51, BL_VERIFY=0x52, BL_REBOOT=0x53, BL_VER_CFG=0x54, BL_READ_VER=0x10;
+const SYNC=0xAA, CMD_READ=0x10, CMD_WRITE=0x11, CMD_WRITE_FIELD=0x12, CMD_SAVE=0x20, CMD_SUB=0x40, CMD_UNSUB=0x41, CMD_DBG=0x43, CMD_DBG_SPEED=0x44, CMD_ENTER_BL=0x52, CMD_REBOOT=0x53, CONFIG_SIZE=250;
+const BL_SYNC=0xA5, BL_ERASE=0x50, BL_WRITE=0x51, BL_VERIFY=0x52, BL_REBOOT=0x53, BL_VER_CFG=0x54, BL_READ_VER=0x10, BL_BL_REQ=0x55;
 
 // ====== CRC & Frame ======
 function crc8(d){let c=0;for(let b of d){c^=b;for(let i=0;i<8;i++)c=((c&0x80)?((c<<1)^0x07):(c<<1))&0xFF}return c}
@@ -2421,8 +2421,13 @@ document.addEventListener('mousemove',function(e){
 </script>
 <script>
 // ====== Firmware Update ======
-// 依赖: protocol.js (BL_*, crc32), serial.js (writer, port, wrapWriter, startReader, serialState, isBootloaderMode, bootPromiseResolve, verPromiseResolve, ackResolve)
+// 依赖: protocol.js (BL_*, crc32), serial.js (writer, port, wrapWriter, startReader, serialState, isBootloaderMode, bootPromiseResolve, verPromiseResolve, ackResolve, sendFrame)
 // 被依赖: (无)
+//
+// 一键下载流程 (v1.1+): 拖入固件 → 点"开始下载" → 自动进入 Bootloader → 刷写
+//   进 BL 方式: 设备在 APP 模式 → 发 CMD_ENTER_BL (0xAA 帧) 软复位;
+//               设备未上电/冷启动 → 持续发 BL 握手帧 [0xA5,0x55,0] 捕获 200ms 窗口;
+//               已在 BL 模式 → 直接刷写。
 
 // ====== HW Version Config Dialog ======
 function showHWVerDialog(){
@@ -2503,7 +2508,7 @@ function confirmCustomFirmware(msg){
   });
 }
 
-// ====== Unified Firmware Update Dialog ======
+// ====== Unified Firmware Update Dialog (一键下载) ======
 async function firmwareUpdate(){
   let bg=getComputedStyle(document.body);
   let panel=bg.getPropertyValue('--panel'),text=bg.getPropertyValue('--text'),border=bg.getPropertyValue('--border'),accent=bg.getPropertyValue('--accent'),green=bg.getPropertyValue('--green'),red=bg.getPropertyValue('--red'),muted=bg.getPropertyValue('--muted'),inputBg=bg.getPropertyValue('--input-bg');
@@ -2525,116 +2530,53 @@ async function firmwareUpdate(){
   function OK(){return`<div style="width:22px;height:22px;background:${green};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="color:#fff;font-size:14px">✓</span></div>`}
   function XX(){return`<div style="width:22px;height:22px;background:${red};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="color:#fff;font-size:14px;font-weight:700">✗</span></div>`}
   function PROG(p,l){return`<div style="background:${border};border-radius:4px;height:8px;margin:8px 0"><div style="height:8px;background:${accent};border-radius:4px;width:${p}%;transition:width .3s"></div></div><div style="font-size:12px;color:${muted}">${l}</div>`}
-  function cancelBtn(extraStyle=''){return`<button onclick="let o=document.getElementById('fw-overlay');if(o)o.remove();serialState='normal';bootPromiseResolve=null;verPromiseResolve=null;ackResolve=null" style="padding:9px 20px;border:1px solid ${border};border-radius:7px;background:transparent;color:${text};font-size:14px;cursor:pointer;${extraStyle}">取消</button>`}
+  // 取消按钮: 同时触发 bootPromiseResolve(null), 让等待 BL:BOOT 的流程立即退出
+  function cancelBtn(extraStyle=''){return`<button onclick="let o=document.getElementById('fw-overlay');if(o)o.remove();serialState='normal';if(bootPromiseResolve){bootPromiseResolve(null)}verPromiseResolve=null;ackResolve=null" style="padding:9px 20px;border:1px solid ${border};border-radius:7px;background:transparent;color:${text};font-size:14px;cursor:pointer;${extraStyle}">取消</button>`}
 
   function renderLayout(inner){
     body.innerHTML=inner+`<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid ${border}">`+cancelBtn()+'</div>';
     return body;
   }
 
-  // ==== STEP 1: Ensure serial connected ====
-  let s1status, s2version;
-  if(port&&writer){
-    renderLayout(`
-      <div style="line-height:2;margin-bottom:10px">
-        <div style="margin-bottom:6px;font-weight:600">请操作设备进入 Bootloader：</div>
-        <div>1️⃣ 按住 <b>FUN 键</b></div>
-        <div>2️⃣ 按一下 <b>RES 键</b></div>
-        <div>3️⃣ 松开 RES</div>
-        <div>4️⃣ 松开 FUN</div>
-      </div>
-      <div id="fw-stack" style="display:flex;flex-direction:column;gap:8px">
-        <div id="fw-status" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${inputBg};border-radius:8px;font-size:13px">${S()} <span>正在等待 BL:BOOT...</span></div>
-      </div>
-    `);
-    s1status=body.querySelector('#fw-status');
-    s2version=body.querySelector('#fw-stack');
-  }else{
-    body.innerHTML=`
-      <div style="line-height:2;margin-bottom:10px">
-        <div style="margin-bottom:6px;font-weight:600">固件更新需要先连接串口</div>
-      </div>
-      <div id="fw-status" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${inputBg};border-radius:8px;font-size:13px;margin-bottom:14px">${XX()} <span style="color:${red}">串口未连接</span></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:12px;border-top:1px solid ${border}">
-        <button id="fw-connect-btn" style="padding:9px 20px;border:none;border-radius:7px;background:${red};color:#fff;font-size:14px;font-weight:600;cursor:pointer">🔌 连接串口</button>
-        ${cancelBtn()}
-      </div>
-    `;
-    s1status=body.querySelector('#fw-status');
-    await new Promise(resolve=>{
-      body.querySelector('#fw-connect-btn').onclick=async()=>{
-        let btn=body.querySelector('#fw-connect-btn');
-        btn.disabled=true;btn.textContent='连接中...';
-        try{
-          port=await navigator.serial.requestPort();
-          await port.open({baudRate:2000000});
-          writer=wrapWriter(port.writable.getWriter());
-          startReader();
-          renderLayout(`
-            <div style="line-height:2;margin-bottom:10px">
-              <div style="margin-bottom:6px;font-weight:600">请操作设备进入 Bootloader：</div>
-              <div>1️⃣ 按住 <b>FUN 键</b></div>
-              <div>2️⃣ 按一下 <b>RES 键</b></div>
-              <div>3️⃣ 松开 RES</div>
-              <div>4️⃣ 松开 FUN</div>
-            </div>
-            <div id="fw-stack" style="display:flex;flex-direction:column;gap:8px">
-              <div id="fw-status" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${inputBg};border-radius:8px;font-size:13px">${S()} <span>正在等待 BL:BOOT...</span></div>
-            </div>
-          `);
-          s1status=body.querySelector('#fw-status');
-          s2version=body.querySelector('#fw-stack');
-          resolve();
-        }catch(e){
-          btn.disabled=false;btn.textContent='🔌 重试连接';
-          s1status.innerHTML=XX()+` <span style="color:${red}">连接失败: ${e.message}</span>`;
-        }
-      };
+  // ==== 握手帧与等待 BL:BOOT 辅助 ====
+  // 握手帧 [BL_SYNC, BL_BL_REQ, 0] — BL 上电后 200ms 窗口内收到即停留 BL 模式;
+  // APP 模式下该帧被忽略, 可安全周期发送。
+  function sendBLHandshake(){
+    if(!writer)return;
+    try{writer.write(new Uint8Array([BL_SYNC,BL_BL_REQ,0]));}catch(e){}
+  }
+  function waitForBoot(timeoutMs,opts){
+    // opts.handshake: 等待期间每 100ms 发握手帧 — 设备冷启动/未上电时捕获 BL 握手窗口
+    serialState='waiting_boot';
+    return new Promise(resolve=>{
+      let done=false,timer=null,hb=null;
+      function finish(r){if(done)return;done=true;if(timer)clearTimeout(timer);if(hb)clearInterval(hb);bootPromiseResolve=null;resolve(r);}
+      timer=setTimeout(()=>finish(null),timeoutMs);
+      if(opts&&opts.handshake)hb=setInterval(sendBLHandshake,100);
+      bootPromiseResolve=(r)=>finish(r);
     });
   }
-  if(cancelled||!port)return;
 
-  // ==== STEP 2: Wait for BL:BOOT via shared reader (no stream reset!) ====
-  serialState='waiting_boot';
-  console.log('[FW] STEP2: waiting for BL:BOOT...');
-  let result=await new Promise(r=>{bootPromiseResolve=r;});
-  console.log('[FW] STEP2: result=',result);
-  if(cancelled){console.log('[FW] STEP2: cancelled');cleanup();return;}
+  // ==== STEP 1: 拖入/选择固件文件 ====
+  console.log('[FW] STEP1: waiting for file selection...');
+  renderLayout(`
+    <div style="line-height:1.8;margin-bottom:12px">
+      <div style="font-weight:600">📥 拖入固件文件，点击"开始下载"后自动进入 Bootloader：</div>
+      <div style="font-size:12px;color:${muted}">无需手动按键 — 设备将自动软复位进入 Bootloader 并完成刷写</div>
+    </div>
+  `);
+  let footer=body.lastElementChild;   /* 按钮行 — 必须在 appendChild 之前取得 */
+  footer.style.justifyContent='space-between';
+  footer.innerHTML=`<button id="fw-go" style="padding:10px 24px;border:none;border-radius:7px;background:${green};color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:none">⚡ 开始下载</button>`+cancelBtn();
+  let goBtn=footer.querySelector('#fw-go');
 
-  if(result==='ver_cfg'){
-    s1status.innerHTML=S()+` <span style="color:${accent}">检测到版本配置请求...</span>`;
-    let ver=await showHWVerDialog();
-    if(ver){bootPromiseResolve=null;await sendVerCfg(ver.major,ver.minor,ver.variant);}
-    s1status.innerHTML=S()+' <span>版本已写入，等待设备重启...</span>';
-    await new Promise(r=>setTimeout(r,2500));
-    s1status.innerHTML=S()+' <span>重新等待 BL:BOOT...</span>';
-    result=await new Promise(r=>{bootPromiseResolve=r;});
-  }
-  if(cancelled){cleanup();return;}
-
-  if(result!=='boot'){
-    console.log('[FW] STEP2: bootloader NOT detected, aborting');
-    s1status.innerHTML=XX()+` <span style="color:${red}">未检测到 Bootloader</span>`;
-    serialState='normal';bootPromiseResolve=null;cleanup();return;
-  }
-
-  console.log('[FW] STEP2: bootloader detected');
-  s1status.innerHTML=OK()+` <span style="color:${green};font-weight:600">Bootloader 已就绪</span>`;
-  let cbtn=document.getElementById('btn-connect');
-  if(cbtn){cbtn.textContent='✅ Bootloader 模式';cbtn.className='btn-green';}
-
-  // ==== STEP 3: Select firmware file ====
-  console.log('[FW] STEP3: waiting for file selection...');
-  let selectDiv=s2version.appendChild(document.createElement('div'));
+  let selectDiv=document.createElement('div');
+  selectDiv.id='fw-file-area';
   selectDiv.style.cssText=`padding:24px 16px;border:2px dashed ${border};border-radius:10px;text-align:center;cursor:pointer;transition:.2s;background:${inputBg}`;
   selectDiv.innerHTML=`<div style="font-size:36px;margin-bottom:6px">📁</div><div style="font-size:14px;color:${text};margin-bottom:4px">拖拽固件文件到此处</div><div style="font-size:12px;color:${muted}">或点击选择 .bin 文件</div>`;
   selectDiv.onmouseenter=()=>{selectDiv.style.borderColor=accent;selectDiv.style.background=`color-mix(in srgb,${accent} 5%,${inputBg})`};
   selectDiv.onmouseleave=()=>{selectDiv.style.borderColor=border;selectDiv.style.background=inputBg};
-
-  let footer=body.lastElementChild;
-  footer.style.justifyContent='space-between';
-  footer.innerHTML=`<button id="fw-go" style="padding:10px 24px;border:none;border-radius:7px;background:${green};color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:none">⚡ 开始刷写</button>`+cancelBtn();
-  let goBtn=footer.querySelector('#fw-go');
+  body.insertBefore(selectDiv, footer);   /* 拖拽区放在按钮行之前 */
 
   let fwBuf=null;
   while(!fwBuf){
@@ -2683,13 +2625,82 @@ async function firmwareUpdate(){
   }
   goBtn.style.display='';
 
-  console.log('[FW] STEP4: file selected, size=',fwBuf.length, 'clicking go...');
+  console.log('[FW] STEP1: file selected, size=',fwBuf.length, 'clicking go...');
   await new Promise(resolve=>{goBtn.onclick=resolve});
-  console.log('[FW] STEP4: GO clicked');
-  if(cancelled){console.log('[FW] STEP4: cancelled');cleanup();return;}
+  console.log('[FW] STEP1: GO clicked');
+  if(!document.getElementById('fw-overlay')){return;}  // 已取消
 
-  // ==== STEP 5: Write firmware with ACK checking & progress ====
-  console.log('[FW] STEP5: starting flash write, total bytes=',isCustomFw?fwBuf.length:fwBuf.length-16);
+  // ==== STEP 2: 确保串口连接 ====
+  console.log('[FW] STEP2: ensure serial connected');
+  let s2status=null;
+  if(!port||!writer){
+    s2status=document.createElement('div');
+    s2status.style.cssText=`display:flex;align-items:center;gap:10px;padding:10px 14px;background:${inputBg};border-radius:8px;font-size:13px;margin-top:12px`;
+    s2status.innerHTML=XX()+` <span style="color:${red}">串口未连接 — 请先连接串口</span>`;
+    body.insertBefore(s2status, footer);
+    footer.innerHTML=`<button id="fw-connect-btn" style="padding:10px 24px;border:none;border-radius:7px;background:${red};color:#fff;font-size:14px;font-weight:600;cursor:pointer">🔌 连接串口</button>`+cancelBtn();
+    await new Promise(resolve=>{
+      body.querySelector('#fw-connect-btn').onclick=async()=>{
+        let btn=body.querySelector('#fw-connect-btn');
+        btn.disabled=true;btn.textContent='连接中...';
+        try{
+          port=await navigator.serial.requestPort();
+          await port.open({baudRate:2000000});
+          writer=wrapWriter(port.writable.getWriter());
+          startReader();
+          s2status.innerHTML=OK()+` <span style="color:${green}">串口已连接</span>`;
+          resolve();
+        }catch(e){
+          btn.disabled=false;btn.textContent='🔌 重试连接';
+          s2status.innerHTML=XX()+` <span style="color:${red}">连接失败: ${e.message}</span>`;
+        }
+      };
+    });
+    if(!port||!document.getElementById('fw-overlay')){return;}  // 未连接成功或已取消
+  }
+
+  // ==== STEP 3: 自动进入 Bootloader ====
+  console.log('[FW] STEP3: entering bootloader');
+  let s3status=document.createElement('div');
+  s3status.style.cssText=`display:flex;align-items:center;gap:10px;padding:10px 14px;background:${inputBg};border-radius:8px;font-size:13px;margin-top:12px`;
+  body.insertBefore(s3status, footer);
+  if(isBootloaderMode){
+    s3status.innerHTML=OK()+` <span style="color:${green};font-weight:600">Bootloader 已就绪</span>`;
+  }else{
+    s3status.innerHTML=S()+` <span>正在自动进入 Bootloader...</span>`;
+    // ① 主路径: APP 收到 CMD_ENTER_BL → 写 RTC magic → 软复位 → BL 停留
+    try{
+      await sendFrame(CMD_ENTER_BL,[]);
+    }catch(e){
+      console.error('[FW] STEP3: sendFrame failed:',e);
+      s3status.innerHTML=XX()+` <span style="color:${red}">串口发送失败: ${e.message}</span>`;
+      serialState='normal';cleanup();return;
+    }
+    let r=await waitForBoot(6000,{handshake:true});
+    if(r==='ver_cfg'){
+      s3status.innerHTML=XX()+` <span style="color:${red}">设备处于版本配置模式 — 请取消后重新下载</span>`;
+      serialState='normal';cleanup();return;
+    }
+    if(r!=='boot'&&document.getElementById('fw-overlay')){
+      // ② 兜底: 设备可能未上电/APP 无响应 — 提示手动上电, 期间持续发握手帧
+      s3status.innerHTML=S()+` <span>未能自动进入 — 请按住 <b>FUN 键</b> 重新上电（或确认串口连接），正在持续等待...</span>`;
+      r=await waitForBoot(30000,{handshake:true});
+    }
+    if(r!=='boot'){
+      console.log('[FW] STEP3: bootloader NOT detected, aborting');
+      s3status.innerHTML=XX()+` <span style="color:${red}">未能进入 Bootloader</span>`;
+      serialState='normal';isBootloaderMode=false;cleanup();return;
+    }
+    s3status.innerHTML=OK()+` <span style="color:${green};font-weight:600">Bootloader 已就绪</span>`;
+    // 等 100ms 让在途握手帧全部到达并被 BL flush 清掉, 防止残留字节污染 ERASE 帧解析
+    await new Promise(r=>setTimeout(r,100));
+  }
+  console.log('[FW] STEP3: bootloader detected');
+  let cbtn=document.getElementById('btn-connect');
+  if(cbtn){cbtn.textContent='✅ Bootloader 模式';cbtn.className='btn-green';}
+
+  // ==== STEP 4: Write firmware with ACK checking & progress ====
+  console.log('[FW] STEP4: starting flash write, total bytes=',isCustomFw?fwBuf.length:fwBuf.length-16);
   serialState='fw_writing';
   title.textContent='⚡ 正在刷写固件...';
   body.innerHTML=`
@@ -2723,10 +2734,10 @@ async function firmwareUpdate(){
 
   // --- Erase ---
   setProgress(2,'擦除 Flash...');
-  console.log('[FW] STEP5: sending ERASE');
+  console.log('[FW] STEP4: sending ERASE');
   await writeFrame(BL_ERASE);
   let ack=await waitForAck(20000);
-  console.log('[FW] STEP5: erase ack=',ack);
+  console.log('[FW] STEP4: erase ack=',ack);
   if(ack!==true){setProgress(2,ack===null?'擦除超时 — 无应答':'擦除失败 — NAK',XX());serialState='normal';isBootloaderMode=false;failFooter();return}
   setProgress(5,'Flash 已擦除',OK());
 
@@ -2748,9 +2759,9 @@ async function firmwareUpdate(){
     if(ack===false){setProgress(bar.style.width.replace('%',''),'块 '+ci+' 写入失败 — NAK',XX());failed=true;break}
     written+=chunk.length;
   }
-  if(failed){console.log('[FW] STEP5: write FAILED');serialState='normal';isBootloaderMode=false;failFooter();return}
+  if(failed){console.log('[FW] STEP4: write FAILED');serialState='normal';isBootloaderMode=false;failFooter();return}
 
-  console.log('[FW] STEP5: all chunks written, '+written+' bytes');
+  console.log('[FW] STEP4: all chunks written, '+written+' bytes');
   setProgress(91,'固件写入完成 ('+written+' bytes)',OK());
 
   // --- Verify (CRC32) ---
@@ -2762,25 +2773,25 @@ async function firmwareUpdate(){
   new DataView(vp.buffer).setUint32(3,expectedCrc,true);
   await writeFrame(BL_VERIFY,Array.from(vp));
   ack=await waitForAck(5000);
-  console.log('[FW] STEP5: verify ack=',ack,'expectedCrc=0x'+expectedCrc.toString(16).padStart(8,'0'));
+  console.log('[FW] STEP4: verify ack=',ack,'expectedCrc=0x'+expectedCrc.toString(16).padStart(8,'0'));
   if(ack===null){setProgress(93,'校验超时',XX());serialState='normal';isBootloaderMode=false;failFooter();return}
   if(ack===false){setProgress(93,'校验失败 — CRC32 不匹配',XX());serialState='normal';isBootloaderMode=false;failFooter();return}
   setProgress(97,'校验通过',OK());
 
   // --- Reboot ---
   setProgress(99,'重启设备...');
-  console.log('[FW] STEP5: sending REBOOT');
+  console.log('[FW] STEP4: sending REBOOT');
   await writeFrame(BL_REBOOT);
   await new Promise(r=>setTimeout(r,800));
   setProgress(100,'完成',OK());
 
-  console.log('[FW] STEP5: done, setting serialState=normal, isBootloaderMode=false, waiting 300ms...');
+  console.log('[FW] STEP4: done, setting serialState=normal, isBootloaderMode=false, waiting 300ms...');
   serialState='normal';isBootloaderMode=false;
   // Delay completion render to ensure it sticks after reboot stream settles
   await new Promise(r=>setTimeout(r,300));
-  console.log('[FW] STEP5: fwOv.parentNode=',!!fwOv.parentNode);
-  if(!fwOv.parentNode){console.log('[FW] STEP5: OVERLAY ALREADY REMOVED!');return;}
-  console.log('[FW] STEP5: rendering completion page');
+  console.log('[FW] STEP4: fwOv.parentNode=',!!fwOv.parentNode);
+  if(!fwOv.parentNode){console.log('[FW] STEP4: OVERLAY ALREADY REMOVED!');return;}
+  console.log('[FW] STEP4: rendering completion page');
   body.innerHTML=`<div style="text-align:center;padding:20px 0">
     <div style="font-size:48px;margin-bottom:8px">✅</div>
     <div style="font-size:16px;font-weight:600;color:${green}">固件更新完成！</div>

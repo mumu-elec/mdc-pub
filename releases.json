@@ -1,0 +1,76 @@
+{
+  "updated": "2026-09-11",
+  "site": "https://mumu-elec.github.io/mdc-pub",
+  "bootloader": { "ver": "1.0", "file": "release/bootloader-v1.0.bin" },
+  "manual": { "ver": "2.0", "file": "docs/technical-manual.md" },
+  "lines": [
+    {
+      "id": "v2",
+      "protocol": 2,
+      "name": "v2 线 · 底盘 / 单电机一体",
+      "current": true,
+      "releases": [
+        {
+          "fw": "1.2.0",
+          "date": "2026-09-11",
+          "notes": "对外首发：底盘 / 单电机一体固件（协议 D=2），底盘预设设为 0 即为四路独立电机模式",
+          "fw_bin": "release/motor_driver_ctrl-v1.2.0.bin",
+          "fw_hex": "release/motor_driver_ctrl-v1.2.0.hex",
+          "host": {
+            "ver": "2.0",
+            "offline": "release/电机上位机-v2.0.html",
+            "online": "release/电机上位机-v2.0-online.html",
+            "web": "web/v2/"
+          }
+        }
+      ]
+    },
+    {
+      "id": "v1",
+      "protocol": 1,
+      "name": "v1 线 · 存档",
+      "current": false,
+      "releases": [
+        {
+          "fw": "1.1.0",
+          "date": "2026-08-15",
+          "notes": "首个对外发布（统一 v1 版本号）",
+          "fw_bin": "release/motor_driver_ctrl-v1.1.0.bin",
+          "fw_hex": "release/motor_driver_ctrl-v1.1.0.hex",
+          "host": {
+            "ver": "1.0",
+            "offline": "release/电机上位机-v1.0.html",
+            "online": null,
+            "web": null
+          }
+        },
+        {
+          "fw": "1.1.1",
+          "date": "2026-09-10",
+          "notes": "修复：遥控行程开环默认值 sbus_param 10000→1000",
+          "fw_bin": "release/motor_driver_ctrl-v1.1.1.bin",
+          "fw_hex": "release/motor_driver_ctrl-v1.1.1.hex",
+          "host": {
+            "ver": "1.1",
+            "offline": "release/电机上位机-v1.1.html",
+            "online": null,
+            "web": null
+          }
+        },
+        {
+          "fw": "1.1.2",
+          "date": "2026-09-10",
+          "notes": "修复：固件版本显示错误跟随板载硬件版本（A 改用编译期 FW_HW_MAJOR）",
+          "fw_bin": "release/motor_driver_ctrl-v1.1.2.bin",
+          "fw_hex": "release/motor_driver_ctrl-v1.1.2.hex",
+          "host": {
+            "ver": "1.1",
+            "offline": "release/电机上位机-v1.1.html",
+            "online": "release/电机上位机-v1.1-online.html",
+            "web": "web/v1/"
+          }
+        }
+      ]
+    }
+  ]
+}

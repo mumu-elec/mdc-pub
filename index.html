@@ -3,96 +3,324 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
 <title>Motor Driver Controller — 四路直流电机驱动器</title>
+<script>
+/* 主题预置: URL 参数 ?theme= > 本地选择 > 系统偏好 > 默认深色 (在 head 内执行避免闪色) */
+(function(){try{
+  var p=new URLSearchParams(location.search).get('theme');
+  var t=(p==='light'||p==='dark')?p:(localStorage.getItem('mdc-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'));
+  document.documentElement.dataset.theme=t;
+}catch(e){}})();
+</script>
 <style>
-:root{--bg:#0a0e18;--panel:#111827;--panel2:#0d1321;--text:#c5c9d4;--border:#1f2937;--accent:#4b8ce8;--green:#3a9a56;--red:#d94444;--muted:#6b7280}
+:root,html[data-theme="dark"]{
+  --bg:#0a0e18;--panel:#111827;--panel2:#0d1321;--text:#c5c9d4;--border:#1f2937;
+  --accent:#4b8ce8;--accent2:#5ea0f5;--green:#3a9a56;--green2:#47b06a;--red:#d94444;
+  --muted:#8b93a3;--gold:#e8b84b;--purple:#a78bfa;--glow:rgba(75,140,232,.14);
+}
+html[data-theme="light"]{
+  --bg:#f4f6fa;--panel:#ffffff;--panel2:#eef1f6;--text:#2a3140;--border:#d9dfe8;
+  --accent:#2563eb;--accent2:#3b82f6;--green:#16a34a;--green2:#22c55e;--red:#dc2626;
+  --muted:#64748b;--gold:#b45309;--purple:#7c3aed;--glow:rgba(37,99,235,.08);
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:15px/1.7 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.wrap{max-width:960px;margin:0 auto;padding:32px 20px 60px}
-header{text-align:center;padding:40px 0 28px;border-bottom:1px solid var(--border);margin-bottom:28px}
-h1{font-size:30px;color:#fff;letter-spacing:1px}
-.tag{display:inline-block;margin-top:10px;padding:3px 12px;border:1px solid var(--border);border-radius:20px;color:var(--muted);font-size:13px}
-.sub{color:var(--muted);margin-top:10px;font-size:14px}
-section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:22px 24px;margin-bottom:20px}
-h2{font-size:18px;color:#fff;margin-bottom:14px;display:flex;align-items:center;gap:10px}
-h2 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.dot.host{background:var(--green)}.dot.fw{background:var(--accent)}.dot.bl{background:var(--red)}.dot.doc{background:#a78bfa}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
-th{color:var(--muted);font-weight:normal;font-size:13px}
-td:last-child{text-align:right}
+body{font:15px/1.7 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .25s,color .25s}
+.wrap{max-width:980px;margin:0 auto;padding:0 20px 56px}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
-.btn{display:inline-block;background:var(--accent);color:#fff;padding:8px 18px;border-radius:6px;font-size:14px;text-decoration:none;margin:4px 8px 4px 0}
-.btn:hover{opacity:.88;text-decoration:none}
-.btn.ghost{background:transparent;border:1px solid var(--accent);color:var(--accent)}
-.note{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:13.5px;color:var(--muted)}
+code{background:var(--panel2);border:1px solid var(--border);padding:1px 6px;border-radius:4px;font-size:13px}
+
+/* ---- 扁平 SVG 图标 ---- */
+.ic{width:16px;height:16px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+.ic.fill{fill:currentColor;stroke:none}
+
+/* ---- 主题切换 ---- */
+.theme-btn{position:fixed;top:16px;right:16px;z-index:100;width:38px;height:38px;border-radius:10px;
+  border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.2s}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent)}
+.theme-btn .ic{width:18px;height:18px}
+
+/* ---- hero ---- */
+.hero{text-align:center;padding:52px 0 34px;border-bottom:1px solid var(--border);margin-bottom:26px;
+  background:radial-gradient(ellipse 80% 60% at 50% -10%,var(--glow),transparent)}
+.hero .logo{display:inline-flex;align-items:center;gap:12px;color:#fff;justify-content:center}
+html[data-theme="light"] .hero .logo{color:var(--text)}
+.hero h1{font-size:32px;letter-spacing:1px;display:inline}
+.hero .logo .ic{width:30px;height:30px;color:var(--gold)}
+.hero .tag{display:inline-block;margin-top:12px;padding:3px 14px;border:1px solid var(--border);border-radius:20px;color:var(--muted);font-size:13px}
+.hero .sub{color:var(--muted);margin-top:10px;font-size:14px}
+.hero .cta{margin-top:22px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+
+/* ---- 按钮 ---- */
+.btn{display:inline-flex;align-items:center;gap:7px;background:var(--accent);color:#fff;padding:9px 20px;border-radius:8px;
+  font-size:14px;font-weight:600;text-decoration:none;border:none;cursor:pointer;transition:.15s}
+.btn:hover{background:var(--accent2);text-decoration:none;transform:translateY(-1px)}
+.btn.green{background:var(--green)}.btn.green:hover{background:var(--green2)}
+.btn.ghost{background:transparent;border:1px solid var(--accent);color:var(--accent);font-weight:500}
+.btn.ghost:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.btn.sm{padding:5px 12px;font-size:12.5px;border-radius:6px;font-weight:500}
+.btn.plain{background:var(--panel2);border:1px solid var(--border);color:var(--text)}
+.btn.plain:hover{border-color:var(--accent);color:var(--accent);background:transparent}
+html[data-theme="dark"] .btn.plain{background:var(--panel2)}
+
+/* ---- 区块 ---- */
+section{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:20px;transition:background .25s,border-color .25s}
+h2{font-size:18px;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h2 .ic{width:19px;height:19px}
+h2 .hi-green{color:var(--green)}h2 .hi-acc{color:var(--accent)}h2 .hi-red{color:var(--red)}
+h2 .hi-purple{color:var(--purple)}h2 .hi-gold{color:var(--gold)}
+.muted{color:var(--muted)}
+.note{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:13px 16px;font-size:13.5px;color:var(--muted);margin-top:14px}
 .note b{color:var(--text)}
+.note ul{list-style:none}
+.note li{margin:3px 0;display:flex;gap:8px;align-items:baseline}
+.note li .ic{width:13px;height:13px;flex-shrink:0;transform:translateY(2px)}
 ol{padding-left:22px;color:var(--muted);font-size:14px}
 ol li{margin-bottom:6px}
-.warn{color:var(--red);font-size:13px;margin-top:8px}
+ol b{color:var(--text)}
+
+/* ---- 徽标 ---- */
+.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 10px;border-radius:12px;font-size:12px;border:1px solid var(--border);color:var(--muted)}
+.chip.acc{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+.chip.grn{color:var(--green);border-color:color-mix(in srgb,var(--green) 50%,transparent)}
+.chip.gld{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,transparent)}
+.chip .ic{width:12px;height:12px}
+
+/* ---- 最新版本 ---- */
+.latest{border-color:color-mix(in srgb,var(--accent) 45%,transparent);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 6%,var(--panel)),var(--panel) 55%)}
+.latest .lv{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.latest .fwv{font-size:26px;color:var(--text);font-weight:700}
+.latest .fwv small{font-size:14px;color:var(--muted);font-weight:400}
+.latest .notes{font-size:13.5px;color:var(--muted);margin-bottom:16px}
+.latest .btns{display:flex;gap:10px;flex-wrap:wrap}
+
+/* ---- 版本时间线 ---- */
+.line-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.line-hd .nm{font-size:15.5px;color:var(--text);font-weight:600}
+.rel{display:flex;align-items:center;gap:14px;padding:13px 4px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.rel:last-child{border-bottom:none}
+.rel .fw-badge{font-family:Consolas,monospace;font-weight:700;color:var(--accent);font-size:14.5px;min-width:74px}
+.rel .meta{flex:1;min-width:220px}
+.rel .meta .d{font-size:12.5px;color:var(--muted)}
+.rel .meta .n{font-size:13px;color:var(--text)}
+.rel .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.archived{opacity:.85}
+
+/* ---- 对比表 ---- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:normal;font-size:12.5px}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--muted)}
+.yes{color:var(--green)}.no{color:var(--muted)}
+td .ic,th .ic{width:14px;height:14px}
+td .ic.yes{color:var(--green)}td .ic.no{color:var(--muted)}
+.cell-ic{display:inline-flex;align-items:center;gap:6px}
+
+/* ---- 杂项 ---- */
+.status{text-align:center;color:var(--muted);padding:30px 0;font-size:14px}
 footer{text-align:center;color:var(--muted);font-size:12.5px;padding-top:16px}
-code{background:var(--panel2);border:1px solid var(--border);padding:1px 6px;border-radius:4px;font-size:13px}
+@media(max-width:640px){.hero h1{font-size:24px}.rel .btns{width:100%}}
 </style>
 </head>
 <body>
+
+<!-- ====== 扁平 SVG 图标库 (24x24 · stroke 2 · currentColor) ====== -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3.5 13.5h6L10 22l10.5-11.5h-6z"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 8-5 4 5 4M16 8l5 4-5 4"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.9 18.3A2 2 0 0 0 3.6 21.3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4m0 4v.01"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+</svg>
+
+<button class="theme-btn" id="theme-btn" title="切换深浅主题" aria-label="切换深浅主题">
+  <svg class="ic"><use href="#i-sun"/></svg>
+</button>
+
 <div class="wrap">
-<header>
-  <h1>⚡ Motor Driver Controller</h1>
-  <span class="tag">STM32F401 + TB6612 · 四路直流电机驱动器</span>
-  <div class="sub">Bootloader + 主固件 + Web 上位机 · SBUS / ELRS / 文本指令 / 二进制帧 多协议支持</div>
+
+<header class="hero">
+  <div class="logo"><svg class="ic fill"><use href="#i-bolt"/></svg><h1>Motor Driver Controller</h1></div>
+  <div><span class="tag">STM32F401 · 四路直流电机驱动器</span></div>
+  <div class="sub">底盘 / 独立电机双模式 · 速度 / 位置闭环 · SBUS / ELRS 遥控 · Web 上位机调参与自整定</div>
+  <div class="cta">
+    <a class="btn green" href="web/v2/"><svg class="ic"><use href="#i-monitor"/></svg>在线上位机</a>
+    <a class="btn ghost" href="docs/technical-manual.md"><svg class="ic"><use href="#i-book"/></svg>技术手册</a>
+  </div>
 </header>
 
+<div id="app"><div class="status">正在加载版本信息…</div></div>
+
 <section>
-  <h2><span class="dot host"></span>Web 上位机 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
-  <p style="color:var(--muted);margin-bottom:14px">基于 Web Serial API 的在线控制台：电机调试 / 编码器反馈 / PID 调参 / 实时曲线 / OTA 固件升级，无需安装，浏览器直连串口。</p>
-  <a class="btn" href="web/">🚀 在线使用上位机</a>
-  <a class="btn ghost" href="release/电机上位机-v1.0.html" download>⬇ 下载离线单文件版</a>
-  <p class="warn">⚠ 在线使用需要 Chrome / Edge 浏览器（Web Serial API），并需 USB 转串口硬件。</p>
+  <h2><svg class="ic hi-gold"><use href="#i-layers"/></svg>上位机：联网版与离线版</h2>
+  <table>
+    <tr><th style="width:32%"></th><th><span class="cell-ic"><svg class="ic"><use href="#i-globe"/></svg>联网版（推荐）</span></th><th>完全离线版</th></tr>
+    <tr><td>在线固件库</td><td class="yes"><span class="cell-ic"><svg class="ic yes"><use href="#i-check"/></svg>从发布页获取固件，在线下载刷写</span></td><td class="no"><span class="cell-ic"><svg class="ic no"><use href="#i-minus"/></svg>手动拖入固件文件</span></td></tr>
+    <tr><td>新版本提醒</td><td class="yes"><span class="cell-ic"><svg class="ic yes"><use href="#i-check"/></svg>有新版时页面提示，点击下载</span></td><td class="no"><span class="cell-ic"><svg class="ic no"><use href="#i-minus"/></svg>—</span></td></tr>
+    <tr><td>协议不匹配</td><td class="yes"><span class="cell-ic"><svg class="ic yes"><use href="#i-check"/></svg>自动找到配套上位机，引导切换</span></td><td class="no"><span class="cell-ic"><svg class="ic no"><use href="#i-minus"/></svg>仅提示不匹配</span></td></tr>
+    <tr><td>联网</td><td>仅访问本发布页，断网自动降级</td><td class="no">零网络请求</td></tr>
+  </table>
+  <p class="muted" style="font-size:12.5px;margin-top:10px">两个版本功能完全一致：电机 / 底盘调试、PID 调参与自整定、实时曲线、固件升级。文件名带 <code>-online</code> 的为联网版。</p>
 </section>
 
 <section>
-  <h2><span class="dot fw"></span>固件发布 <span style="font-size:13px;color:var(--muted)">v1.1.0</span></h2>
+  <h2><svg class="ic hi-red"><use href="#i-package"/></svg>Bootloader</h2>
   <table>
-    <tr><th>文件</th><th>说明</th><th>下载</th></tr>
-    <tr><td><code>motor_driver_ctrl-v1.1.0.bin</code></td><td>主固件二进制（烧录到应用区，建议经 Bootloader 升级）</td><td><a href="release/motor_driver_ctrl-v1.1.0.bin" download>下载</a></td></tr>
-    <tr><td><code>motor_driver_ctrl-v1.1.0.hex</code></td><td>主固件 HEX（含地址信息，可用 ST-LINK 直接烧录）</td><td><a href="release/motor_driver_ctrl-v1.1.0.hex" download>下载</a></td></tr>
+    <tr><th>文件</th><th>说明</th><th style="text-align:right">下载</th></tr>
+    <tr>
+      <td><code>bootloader-v1.0.bin</code></td>
+      <td>串口升级引导程序，所有固件线通用；仅产线首次烧录需要（经 ST-LINK 写入）</td>
+      <td style="text-align:right"><a href="release/bootloader-v1.0.bin" download><span class="cell-ic"><svg class="ic"><use href="#i-download"/></svg>下载</span></a></td>
+    </tr>
   </table>
 </section>
 
 <section>
-  <h2><span class="dot bl"></span>Bootloader 发布 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
-  <table>
-    <tr><th>文件</th><th>说明</th><th>下载</th></tr>
-    <tr><td><code>bootloader-v1.0.bin</code></td><td>Bootloader 二进制（首刷时经 ST-LINK 烧录，之后负责串口升级）</td><td><a href="release/bootloader-v1.0.bin" download>下载</a></td></tr>
-  </table>
-</section>
-
-<section>
-  <h2><span class="dot doc"></span>技术手册 <span style="font-size:13px;color:var(--muted)">v1.0</span></h2>
-  <p style="color:var(--muted);margin-bottom:14px">硬件规格、接口定义、通信协议、OTA 升级、故障排查等完整说明。</p>
-  <a class="btn" href="docs/technical-manual.md" download>📄 下载技术手册 (Markdown)</a>
-  <a class="btn ghost" href="docs/ai-manual.md" download>🤖 下载 AI 接口手册 (Machine Interface)</a>
-  <p style="color:var(--muted);font-size:13px;margin-top:8px">「AI 接口手册」面向 AI Agent / 上位机程序：涵盖全部公开命令、二进制帧协议、CRC、参数偏移、状态/遥测、Bootloader 与错误处理，可据此直接生成控制/测试/二次开发代码。文档为单一整合稿（接口手册 + 一致性验证 + 外部 AI 测试 + 交付报告）。</p>
-</section>
-
-<section>
-  <h2><span class="dot" style="background:var(--muted)"></span>烧录与使用说明</h2>
+  <h2><svg class="ic hi-acc"><use href="#i-play"/></svg>快速上手</h2>
   <ol>
-    <li>首次烧录：用 ST-LINK 先烧 <code>bootloader-v1.0.bin</code>，再烧 <code>motor_driver_ctrl-v1.1.0.bin</code> 到应用区。</li>
-    <li>后续升级：可通过上位机的串口升级功能经 Bootloader 写入新固件。</li>
-    <li>连接：USB 转串口接 UART，打开上方 <b>在线上位机</b>，选择串口并连接。</li>
-    <li>协议版本：上位机 <code>HOST_MAJOR=1</code> 与固件 <code>SW_MAJOR=1</code> 匹配（不匹配时上位机会显示 ❌ 协议不兼容）。</li>
+    <li><b>连接</b>：Type-C 数据线连接驱动板与电脑（板载 USB 转串口，无需额外模块），接好 DC 电源。</li>
+    <li><b>打开上位机</b>：进入在线上位机，选择串口连接。</li>
+    <li><b>固件升级</b>：上位机「固件升级」中在线获取固件一键刷写，已有固件包也可手动拖入。</li>
   </ol>
-  <div class="note" style="margin-top:14px">
-    <b>硬件：</b>STM32F401 + TB6612 ×2（四路电机）· 编码器输入 · SBUS 反相（三异或门）· I2C EEPROM 配置存储 · LED 状态指示
+  <div class="note">
+    <ul>
+      <li><svg class="ic"><use href="#i-plug"/></svg><span>板上 Type-C 仅用于通信，<b>不供电</b>；使用时请接 DC 电源接口。</span></li>
+      <li><svg class="ic"><use href="#i-monitor"/></svg><span>在线上位机需 <b>Chrome / Edge</b> 浏览器（Web Serial API）。</span></li>
+      <li><svg class="ic"><use href="#i-alert"/></svg><span>上位机与固件的协议版本（D）需一致；不一致时联网版上位机会自动引导切换到配套版本。</span></li>
+    </ul>
   </div>
 </section>
 
+<section>
+  <h2><svg class="ic hi-purple"><use href="#i-book"/></svg>技术手册与例程库</h2>
+  <p class="muted" style="margin-bottom:14px">硬件规格、接口定义、通信协议、固件升级与故障排查；二次开发例程覆盖 Python / C++ / MicroPython / ESP32 / RP2040 / STM32 / Arduino / 51。</p>
+  <a class="btn sm" href="docs/technical-manual.md"><svg class="ic"><use href="#i-book"/></svg>在线查看手册</a>
+  <a class="btn sm ghost" href="docs/technical-manual.md" download><svg class="ic"><use href="#i-download"/></svg>下载手册</a>
+  <a class="btn sm plain" href="mdc_lib/README.md"><svg class="ic"><use href="#i-code"/></svg>例程库说明</a>
+  <a class="btn sm plain" href="mdc_lib/协议规范.md"><svg class="ic"><use href="#i-file"/></svg>通信协议规范</a>
+</section>
+
 <footer>
-  Motor Driver Controller · 上位机 v1.0 (D=1,F=0) · 固件 v1.1.0 (A=1,D=1,E=0) · BL v1.0 · 手册 v1.0<br>
-  源码仓库为私有，本页面仅提供发布物下载与在线上位机服务
+  Motor Driver Controller · <span id="ft-upd"></span>
 </footer>
+
+<noscript>
+  <div class="note" style="margin:20px 0">
+    <b>本页需要启用 JavaScript 以显示完整版本列表。</b>常用入口：<a href="web/v2/">在线上位机</a> ·
+    <a href="release/motor_driver_ctrl-v1.2.0.bin" download>固件 v1.2.0</a> ·
+    <a href="docs/technical-manual.md">技术手册</a>
+  </div>
+</noscript>
+
 </div>
+
+<script>
+(function(){
+  'use strict';
+  /* ====== 主题切换 ====== */
+  var tbtn=document.getElementById('theme-btn');
+  function renderThemeBtn(){
+    var dark=document.documentElement.dataset.theme!=='light';
+    tbtn.querySelector('use').setAttribute('href',dark?'#i-sun':'#i-moon');
+    tbtn.title=dark?'切换到浅色':'切换到深色';
+  }
+  tbtn.onclick=function(){
+    var next=document.documentElement.dataset.theme==='light'?'dark':'light';
+    document.documentElement.dataset.theme=next;
+    try{localStorage.setItem('mdc-theme',next);}catch(e){}
+    renderThemeBtn();
+  };
+  renderThemeBtn();
+
+  /* ====== 工具 ====== */
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function ic(n){return '<svg class="ic"><use href="#i-'+n+'"/></svg>'}
+  function btn(href,icon,label,cls,dl){
+    if(!href)return'';
+    return '<a class="btn sm '+(cls||'plain')+'" href="'+esc(href)+'"'+(dl===false?'':' download')+'>'+ic(icon)+label+'</a>';
+  }
+
+  /* 一条固件版本 */
+  function relRow(r,line){
+    var h=r.host||{};
+    var hostChip=h.ver?'<span class="chip acc">配 上位机 v'+esc(h.ver)+'</span>':'';
+    var btns=
+      btn(r.fw_bin,'download','固件 BIN')+
+      btn(r.fw_hex,'download','HEX')+
+      btn(h.online,'download','上位机 · 联网版','ghost')+
+      btn(h.offline,'download','上位机 · 离线','ghost')+
+      btn(h.web,'globe','在线使用','',false);
+    return '<div class="rel'+(line.current?'':' archived')+'">'+
+      '<span class="fw-badge">v'+esc(r.fw)+'</span>'+
+      '<div class="meta"><div class="n">'+esc(r.notes)+'</div><div class="d">'+esc(r.date)+' · 协议 D='+line.protocol+' '+hostChip+'</div></div>'+
+      '<div class="btns">'+btns+'</div></div>';
+  }
+
+  /* 最新版本卡片 */
+  function latestCard(line){
+    var r=line.releases[line.releases.length-1],h=r.host||{};
+    return '<section class="latest"><h2>'+ic2('bolt','hi-green')+'最新版本'+
+      '<span class="chip grn">当前线 · 协议 D='+line.protocol+'</span></h2>'+
+      '<div class="lv"><span class="fwv">固件 v'+esc(r.fw)+' <small>/ 上位机 v'+esc(h.ver)+'</small></span>'+
+      '<span class="chip">'+esc(r.date)+'</span></div>'+
+      '<div class="notes">'+esc(r.notes)+'</div>'+
+      '<div class="btns">'+
+        (h.web?'<a class="btn green" href="'+esc(h.web)+'">'+ic('monitor')+'在线上位机</a>':'')+
+        btn(h.online,'download','上位机 · 联网版','')+
+        btn(h.offline,'download','上位机 · 完全离线','ghost')+
+        btn(r.fw_bin,'download','固件 BIN','ghost')+
+        btn(r.fw_hex,'download','固件 HEX','ghost')+
+      '</div></section>';
+  }
+  function ic2(n,cls){return '<svg class="ic '+cls+'"><use href="#i-'+n+'"/></svg>'}
+
+  /* 版本时间线 */
+  function timeline(lines){
+    var out='<section><h2>'+ic2('clock','hi-acc')+'全部版本'+
+      '<span class="chip">版本号：固件 vA.D.E · 上位机 vD.F</span></h2>';
+    lines.forEach(function(line){
+      out+='<div class="line-hd"><span class="nm">'+esc(line.name)+'</span>'+
+        '<span class="chip acc">协议 D='+line.protocol+'</span>'+
+        (line.current?'<span class="chip grn">当前维护</span>':'<span class="chip gld">存档 · 不再更新</span>')+'</div>';
+      for(var i=line.releases.length-1;i>=0;i--)out+=relRow(line.releases[i],line);
+    });
+    return out+'</section>';
+  }
+
+  fetch('releases.json',{cache:'no-cache'}).then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(m){
+    var app=document.getElementById('app');
+    var cur=null;
+    m.lines.forEach(function(l){if(l.current)cur=l});
+    var html='';
+    if(cur)html+=latestCard(cur);
+    html+=timeline(m.lines);
+    app.innerHTML=html;
+    if(m.updated){var ft=document.getElementById('ft-upd');if(ft)ft.textContent='版本清单更新于 '+m.updated;}
+  }).catch(function(e){
+    document.getElementById('app').innerHTML=
+      '<div class="status">版本清单加载失败（'+esc(e.message)+'）— 常用入口：<a href="web/v2/">在线上位机</a> · '+
+      '<a href="release/motor_driver_ctrl-v1.2.0.bin" download>固件 v1.2.0</a></div>';
+  });
+})();
+</script>
 </body>
 </html>
