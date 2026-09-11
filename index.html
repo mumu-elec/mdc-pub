@@ -18,15 +18,18 @@
   --bg:#0a0e18;--panel:#111827;--panel2:#0d1321;--text:#c5c9d4;--border:#1f2937;
   --accent:#4b8ce8;--accent2:#5ea0f5;--green:#3a9a56;--green2:#47b06a;--red:#d94444;
   --muted:#8b93a3;--gold:#e8b84b;--purple:#a78bfa;--glow:rgba(75,140,232,.14);
+  --hair:color-mix(in srgb,var(--border) 72%,transparent);
 }
 html[data-theme="light"]{
   --bg:#f4f6fa;--panel:#ffffff;--panel2:#eef1f6;--text:#2a3140;--border:#d9dfe8;
   --accent:#2563eb;--accent2:#3b82f6;--green:#16a34a;--green2:#22c55e;--red:#dc2626;
   --muted:#64748b;--gold:#b45309;--purple:#7c3aed;--glow:rgba(37,99,235,.08);
+  --hair:color-mix(in srgb,var(--border) 72%,transparent);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font:15px/1.7 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .25s,color .25s}
-.wrap{max-width:980px;margin:0 auto;padding:0 20px 56px}
+body{font:15px/1.7 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .25s,color .25s;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+.wrap{max-width:880px;margin:0 auto;padding:0 20px 56px}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 code{background:var(--panel2);border:1px solid var(--border);padding:1px 6px;border-radius:4px;font-size:13px}
@@ -43,7 +46,7 @@ code{background:var(--panel2);border:1px solid var(--border);padding:1px 6px;bor
 .theme-btn .ic{width:18px;height:18px}
 
 /* ---- hero ---- */
-.hero{text-align:center;padding:52px 0 34px;border-bottom:1px solid var(--border);margin-bottom:26px;
+.hero{text-align:center;padding:52px 0 10px;margin-bottom:44px;
   background:radial-gradient(ellipse 80% 60% at 50% -10%,var(--glow),transparent)}
 .hero .logo{display:inline-flex;align-items:center;gap:12px;color:#fff;justify-content:center}
 html[data-theme="light"] .hero .logo{color:var(--text)}
@@ -58,72 +61,82 @@ html[data-theme="light"] .hero .logo{color:var(--text)}
   font-size:14px;font-weight:600;text-decoration:none;border:none;cursor:pointer;transition:.15s}
 .btn:hover{background:var(--accent2);text-decoration:none;transform:translateY(-1px)}
 .btn.green{background:var(--green)}.btn.green:hover{background:var(--green2)}
-.btn.ghost{background:transparent;border:1px solid var(--accent);color:var(--accent);font-weight:500}
-.btn.ghost:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-weight:500}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent);background:transparent;transform:none}
 .btn.sm{padding:5px 12px;font-size:12.5px;border-radius:6px;font-weight:500}
 .btn.plain{background:var(--panel2);border:1px solid var(--border);color:var(--text)}
-.btn.plain:hover{border-color:var(--accent);color:var(--accent);background:transparent}
-html[data-theme="dark"] .btn.plain{background:var(--panel2)}
+.btn.plain:hover{border-color:var(--accent);color:var(--accent);background:transparent;transform:none}
 
-/* ---- 区块 ---- */
-section{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:20px;transition:background .25s,border-color .25s}
-h2{font-size:18px;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-h2 .ic{width:19px;height:19px}
-h2 .hi-green{color:var(--green)}h2 .hi-acc{color:var(--accent)}h2 .hi-red{color:var(--red)}
-h2 .hi-purple{color:var(--purple)}h2 .hi-gold{color:var(--gold)}
-.muted{color:var(--muted)}
-.note{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:13px 16px;font-size:13.5px;color:var(--muted);margin-top:14px}
-.note b{color:var(--text)}
-.note ul{list-style:none}
-.note li{margin:3px 0;display:flex;gap:8px;align-items:baseline}
-.note li .ic{width:13px;height:13px;flex-shrink:0;transform:translateY(2px)}
-ol{padding-left:22px;color:var(--muted);font-size:14px}
-ol li{margin-bottom:6px}
-ol b{color:var(--text)}
+/* ---- 区块标题行: 标题+版本+日期+动作 同行, 底部对齐 ---- */
+section{margin-bottom:40px}
+section + section{border-top:1px solid var(--border);padding-top:40px}
+h2{font-size:26px;color:var(--text);margin-bottom:16px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+h2 .ic{width:24px;height:24px;transform:translateY(2px)}
+h2 .chip{align-self:center}
+h2 .hi-acc{color:var(--accent)}
+h2 .hi-gold{color:var(--gold)}
+h2 .v{font-family:Consolas,monospace;font-size:24px;font-weight:700;color:var(--text)}
+h2 .date{font-size:13px;color:var(--muted);font-family:Consolas,monospace}
+h2 .extras{margin-left:auto;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.hint{margin-top:16px;font-size:13px;color:var(--muted);line-height:1.8}
+.hint b{color:var(--text);font-weight:600}
 
 /* ---- 徽标 ---- */
-.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 10px;border-radius:12px;font-size:12px;border:1px solid var(--border);color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 10px;border-radius:12px;font-size:12.5px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
 .chip.acc{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
 .chip.grn{color:var(--green);border-color:color-mix(in srgb,var(--green) 50%,transparent)}
 .chip.gld{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,transparent)}
-.chip .ic{width:12px;height:12px}
 
-/* ---- 最新版本 ---- */
-.latest{border-color:color-mix(in srgb,var(--accent) 45%,transparent);
-  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 6%,var(--panel)),var(--panel) 55%)}
-.latest .lv{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
-.latest .fwv{font-size:26px;color:var(--text);font-weight:700}
-.latest .fwv small{font-size:14px;color:var(--muted);font-weight:400}
-.latest .notes{font-size:13.5px;color:var(--muted);margin-bottom:16px}
-.latest .btns{display:flex;gap:10px;flex-wrap:wrap}
+/* ---- 当前版行 ---- */
 
-/* ---- 版本时间线 ---- */
-.line-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--border)}
-.line-hd .nm{font-size:15.5px;color:var(--text);font-weight:600}
-.rel{display:flex;align-items:center;gap:14px;padding:13px 4px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-.rel:last-child{border-bottom:none}
-.rel .fw-badge{font-family:Consolas,monospace;font-weight:700;color:var(--accent);font-size:14.5px;min-width:74px}
-.rel .meta{flex:1;min-width:220px}
-.rel .meta .d{font-size:12.5px;color:var(--muted)}
-.rel .meta .n{font-size:13px;color:var(--text)}
-.rel .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.archived{opacity:.85}
+/* ---- 统一扁平列表 (文件 / 资料 / 历史版本 同一套视觉) ---- */
+.lb{margin-top:18px}
+.lh{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--muted);margin-bottom:2px}
+.lhead,.lr{display:grid;gap:12px;align-items:center;padding:8px 2px;border-bottom:1px solid var(--hair)}
+.lhead{font-size:12px;color:var(--muted);padding:4px 2px;letter-spacing:.3px}
+.lr{transition:background .15s}
+.lr:hover{background:color-mix(in srgb,var(--accent) 4%,transparent)}
+.lr:last-child{border-bottom:none}
+.lg-files{grid-template-columns:24px minmax(0,1.15fr) minmax(0,1.6fr) 92px 40px}
+.lg-res{grid-template-columns:24px minmax(0,1fr) minmax(0,1.9fr) 40px}
+.lg-hist{grid-template-columns:120px 100px 1fr}
+.fticon{width:15px;height:15px;color:var(--accent)}
+.fn{font-family:Consolas,monospace;font-size:13.5px;color:var(--text);word-break:break-all}
+.fn a{color:var(--text)}
+.fn a:hover{color:var(--accent);text-decoration:none}
+.fnote{font-size:12.5px;color:var(--muted)}
+.fdate{font-size:12.5px;color:var(--muted);font-family:Consolas,monospace;white-space:nowrap}
+.c-op{text-align:right}
+.hv{font-family:Consolas,monospace;font-weight:700;font-size:14px;color:var(--accent);display:flex;gap:8px;align-items:center;white-space:nowrap}
+.hv.old{color:var(--muted)}
+.hdate{font-size:13px;color:var(--muted);font-family:Consolas,monospace;white-space:nowrap}
+.ops{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.ibtn{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;font-size:12px;
+  color:var(--muted);border:1px solid var(--hair);text-decoration:none;flex-shrink:0;transition:.15s}
+.ibtn .ic{width:13px;height:13px}
+.ibtn .lb2{font-size:11.5px;font-family:Consolas,monospace}
+.ibtn:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 7%,transparent);text-decoration:none}
+.ibtn.det{color:var(--text)}
+.ibtn.det:hover{color:var(--accent)}
 
-/* ---- 对比表 ---- */
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
-th{color:var(--muted);font-weight:normal;font-size:12.5px}
-tr:last-child td{border-bottom:none}
-td:first-child{color:var(--muted)}
-.yes{color:var(--green)}.no{color:var(--muted)}
-td .ic,th .ic{width:14px;height:14px}
-td .ic.yes{color:var(--green)}td .ic.no{color:var(--muted)}
-.cell-ic{display:inline-flex;align-items:center;gap:6px}
+.hint{margin-top:16px}
 
 /* ---- 杂项 ---- */
 .status{text-align:center;color:var(--muted);padding:30px 0;font-size:14px}
-footer{text-align:center;color:var(--muted);font-size:12.5px;padding-top:16px}
-@media(max-width:640px){.hero h1{font-size:24px}.rel .btns{width:100%}}
+footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
+@media(max-width:640px){
+  .hero h1{font-size:24px}
+  h2{font-size:22px}
+  h2 .ic{width:20px;height:20px}
+  .lg-files,.lg-res{display:flex;flex-wrap:wrap}
+  .fnote{flex:1;min-width:150px}
+  .fdate{margin-left:auto}
+  .c-op{margin-left:0;width:100%;text-align:left}
+  .lhead{display:none}
+  h2 .extras{margin-left:0}
+  .lg-hist{grid-template-columns:80px 1fr;grid-auto-rows:auto}
+  .lg-hist .ops{grid-column:1/-1;justify-content:flex-start}
+}
 </style>
 </head>
 <body>
@@ -133,20 +146,21 @@ footer{text-align:center;color:var(--muted);font-size:12.5px;padding-top:16px}
   <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3.5 13.5h6L10 22l10.5-11.5h-6z"/></symbol>
   <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
-  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9z"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></symbol>
-  <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
-  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 8-5 4 5 4M16 8l5 4-5 4"/></symbol>
-  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
-  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5"/></symbol>
-  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
-  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12.5 5 5L20 6.5"/></symbol>
-  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
   <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></symbol>
-  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.9 18.3A2 2 0 0 0 3.6 21.3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4m0 4v.01"/></symbol>
+  <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="10" y="10" width="4" height="4"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <!-- 文件类型: 纸页+折角+扩展名标签 -->
+  <symbol id="i-f-bin" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">BIN</text></symbol>
+  <symbol id="i-f-hex" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">HEX</text></symbol>
+  <symbol id="i-f-html" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.2" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="5.6" fill="currentColor" stroke="none">HTML</text></symbol>
+  <symbol id="i-f-pdf" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">PDF</text></symbol>
+  <symbol id="i-f-md" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="8" fill="currentColor" stroke="none">MD</text></symbol>
+  <symbol id="i-f-zip" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">ZIP</text></symbol>
 </svg>
 
 <button class="theme-btn" id="theme-btn" title="切换深浅主题" aria-label="切换深浅主题">
@@ -167,63 +181,15 @@ footer{text-align:center;color:var(--muted);font-size:12.5px;padding-top:16px}
 
 <div id="app"><div class="status">正在加载版本信息…</div></div>
 
-<section>
-  <h2><svg class="ic hi-gold"><use href="#i-layers"/></svg>上位机：联网版与离线版</h2>
-  <table>
-    <tr><th style="width:32%"></th><th><span class="cell-ic"><svg class="ic"><use href="#i-globe"/></svg>联网版（推荐）</span></th><th>完全离线版</th></tr>
-    <tr><td>在线固件库</td><td class="yes"><span class="cell-ic"><svg class="ic yes"><use href="#i-check"/></svg>从发布页获取固件，在线下载刷写</span></td><td class="no"><span class="cell-ic"><svg class="ic no"><use href="#i-minus"/></svg>手动拖入固件文件</span></td></tr>
-    <tr><td>新版本提醒</td><td class="yes"><span class="cell-ic"><svg class="ic yes"><use href="#i-check"/></svg>有新版时页面提示，点击下载</span></td><td class="no"><span class="cell-ic"><svg class="ic no"><use href="#i-minus"/></svg>—</span></td></tr>
-    <tr><td>协议不匹配</td><td class="yes"><span class="cell-ic"><svg class="ic yes"><use href="#i-check"/></svg>自动找到配套上位机，引导切换</span></td><td class="no"><span class="cell-ic"><svg class="ic no"><use href="#i-minus"/></svg>仅提示不匹配</span></td></tr>
-    <tr><td>联网</td><td>仅访问本发布页，断网自动降级</td><td class="no">零网络请求</td></tr>
-  </table>
-  <p class="muted" style="font-size:12.5px;margin-top:10px">两个版本功能完全一致：电机 / 底盘调试、PID 调参与自整定、实时曲线、固件升级。文件名带 <code>-online</code> 的为联网版。</p>
-</section>
-
-<section>
-  <h2><svg class="ic hi-red"><use href="#i-package"/></svg>Bootloader</h2>
-  <table>
-    <tr><th>文件</th><th>说明</th><th style="text-align:right">下载</th></tr>
-    <tr>
-      <td><code>bootloader-v1.0.bin</code></td>
-      <td>串口升级引导程序，所有固件线通用；仅产线首次烧录需要（经 ST-LINK 写入）</td>
-      <td style="text-align:right"><a href="release/bootloader-v1.0.bin" download><span class="cell-ic"><svg class="ic"><use href="#i-download"/></svg>下载</span></a></td>
-    </tr>
-  </table>
-</section>
-
-<section>
-  <h2><svg class="ic hi-acc"><use href="#i-play"/></svg>快速上手</h2>
-  <ol>
-    <li><b>连接</b>：Type-C 数据线连接驱动板与电脑（板载 USB 转串口，无需额外模块），接好 DC 电源。</li>
-    <li><b>打开上位机</b>：进入在线上位机，选择串口连接。</li>
-    <li><b>固件升级</b>：上位机「固件升级」中在线获取固件一键刷写，已有固件包也可手动拖入。</li>
-  </ol>
-  <div class="note">
-    <ul>
-      <li><svg class="ic"><use href="#i-plug"/></svg><span>板上 Type-C 仅用于通信，<b>不供电</b>；使用时请接 DC 电源接口。</span></li>
-      <li><svg class="ic"><use href="#i-monitor"/></svg><span>在线上位机需 <b>Chrome / Edge</b> 浏览器（Web Serial API）。</span></li>
-      <li><svg class="ic"><use href="#i-alert"/></svg><span>上位机与固件的协议版本（D）需一致；不一致时联网版上位机会自动引导切换到配套版本。</span></li>
-    </ul>
-  </div>
-</section>
-
-<section>
-  <h2><svg class="ic hi-purple"><use href="#i-book"/></svg>技术手册与例程库</h2>
-  <p class="muted" style="margin-bottom:14px">硬件规格、接口定义、通信协议、固件升级与故障排查；二次开发例程覆盖 Python / C++ / MicroPython / ESP32 / RP2040 / STM32 / Arduino / 51。</p>
-  <a class="btn sm" href="docs/technical-manual.md"><svg class="ic"><use href="#i-book"/></svg>在线查看手册</a>
-  <a class="btn sm ghost" href="docs/technical-manual.md" download><svg class="ic"><use href="#i-download"/></svg>下载手册</a>
-  <a class="btn sm plain" href="mdc_lib/README.md"><svg class="ic"><use href="#i-code"/></svg>例程库说明</a>
-  <a class="btn sm plain" href="mdc_lib/协议规范.md"><svg class="ic"><use href="#i-file"/></svg>通信协议规范</a>
-</section>
-
 <footer>
   Motor Driver Controller · <span id="ft-upd"></span>
 </footer>
 
 <noscript>
-  <div class="note" style="margin:20px 0">
-    <b>本页需要启用 JavaScript 以显示完整版本列表。</b>常用入口：<a href="web/v2/">在线上位机</a> ·
+  <div style="margin:20px 0;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:13px 16px;font-size:13.5px">
+    <b>本页需要启用 JavaScript 以显示版本列表。</b>常用入口：<a href="web/v2/">在线上位机</a> ·
     <a href="release/motor_driver_ctrl-v1.2.0.bin" download>固件 v1.2.0</a> ·
+    <a href="fw/v1.2.0.html">固件 v1.2.0 详情</a> ·
     <a href="docs/technical-manual.md">技术手册</a>
   </div>
 </noscript>
@@ -250,70 +216,176 @@ footer{text-align:center;color:var(--muted);font-size:12.5px;padding-top:16px}
 
   /* ====== 工具 ====== */
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-  function ic(n){return '<svg class="ic"><use href="#i-'+n+'"/></svg>'}
-  function btn(href,icon,label,cls,dl){
-    if(!href)return'';
-    return '<a class="btn sm '+(cls||'plain')+'" href="'+esc(href)+'"'+(dl===false?'':' download')+'>'+ic(icon)+label+'</a>';
+  function ic(n,cls){return '<svg class="ic '+(cls||'')+'"><use href="#i-'+n+'"/></svg>'}
+  function dateOrDash(d){return d?esc(d):'—'}
+  function baseName(href){
+    try{return decodeURIComponent(String(href).split('/').pop());}catch(e){return String(href).split('/').pop();}
   }
-
-  /* 一条固件版本 */
-  function relRow(r,line){
-    var h=r.host||{};
-    var hostChip=h.ver?'<span class="chip acc">配 上位机 v'+esc(h.ver)+'</span>':'';
-    var btns=
-      btn(r.fw_bin,'download','固件 BIN')+
-      btn(r.fw_hex,'download','HEX')+
-      btn(h.online,'download','上位机 · 联网版','ghost')+
-      btn(h.offline,'download','上位机 · 离线','ghost')+
-      btn(h.web,'globe','在线使用','',false);
-    return '<div class="rel'+(line.current?'':' archived')+'">'+
-      '<span class="fw-badge">v'+esc(r.fw)+'</span>'+
-      '<div class="meta"><div class="n">'+esc(r.notes)+'</div><div class="d">'+esc(r.date)+' · 协议 D='+line.protocol+' '+hostChip+'</div></div>'+
-      '<div class="btns">'+btns+'</div></div>';
+  /* 文件类型图标: 纸页+折角+扩展名标签 (尺寸与正文文字一致) */
+  function ftIcon(href){
+    var h=String(href||'').toLowerCase();
+    if(/\.html?$/.test(h))return ic('f-html','fticon');
+    if(/\.bin$/.test(h))return ic('f-bin','fticon');
+    if(/\.hex$/.test(h))return ic('f-hex','fticon');
+    if(/\.pdf$/.test(h))return ic('f-pdf','fticon');
+    if(/\.md$/.test(h))return ic('f-md','fticon');
+    if(/\.zip$/.test(h))return ic('f-zip','fticon');
+    return ic('file','fticon');
   }
-
-  /* 最新版本卡片 */
-  function latestCard(line){
-    var r=line.releases[line.releases.length-1],h=r.host||{};
-    return '<section class="latest"><h2>'+ic2('bolt','hi-green')+'最新版本'+
-      '<span class="chip grn">当前线 · 协议 D='+line.protocol+'</span></h2>'+
-      '<div class="lv"><span class="fwv">固件 v'+esc(r.fw)+' <small>/ 上位机 v'+esc(h.ver)+'</small></span>'+
-      '<span class="chip">'+esc(r.date)+'</span></div>'+
-      '<div class="notes">'+esc(r.notes)+'</div>'+
-      '<div class="btns">'+
-        (h.web?'<a class="btn green" href="'+esc(h.web)+'">'+ic('monitor')+'在线上位机</a>':'')+
-        btn(h.online,'download','上位机 · 联网版','')+
-        btn(h.offline,'download','上位机 · 完全离线','ghost')+
-        btn(r.fw_bin,'download','固件 BIN','ghost')+
-        btn(r.fw_hex,'download','固件 HEX','ghost')+
-      '</div></section>';
+  /* 统一列表块: 列头 + 数据行 (label 为空则不显示标签行) */
+  function lb(label,labelExtra,headCols,rows){
+    var body=Array.isArray(rows)?rows.join(''):rows;
+    var head=(label?'<div class="lh">'+esc(label)+(labelExtra||'')+'</div>':'');
+    return '<div class="lb">'+head+
+      '<div class="lhead '+headCols.g+'">'+headCols.h+'</div>'+body+'</div>';
   }
-  function ic2(n,cls){return '<svg class="ic '+cls+'"><use href="#i-'+n+'"/></svg>'}
+  var HEAD_FILES={g:'lg-files',h:'<span></span><span>文件</span><span>说明</span><span>发布时间</span><span class="c-op">操作</span>'};
+  var HEAD_RES={g:'lg-res',h:'<span></span><span>文件</span><span>说明</span><span class="c-op">操作</span>'};
+  var HEAD_HIST={g:'lg-hist',h:'<span>版本</span><span>日期</span><span style="text-align:right">操作</span>'};
+  /* 文件行: [类型图标] 文件名 说明 发布时间 [下载] */
+  function frow(href,note,date){
+    if(!href)return '';
+    var nm=baseName(href);
+    return '<div class="lr lg-files">'+ftIcon(href)+
+      '<span class="fn"><a href="'+esc(href)+'" download title="下载 '+esc(nm)+'">'+esc(nm)+'</a></span>'+
+      '<span class="fnote">'+(note?esc(note):'')+'</span>'+
+      '<span class="fdate">'+dateOrDash(date)+'</span>'+
+      '<span class="c-op"><a class="ibtn" href="'+esc(href)+'" download title="下载 '+esc(nm)+'">'+ic('download')+'</a></span>'+
+      '</div>';
+  }
+  /* 资料行 (无日期列): 名称用 json 的 name */
+  function rrow(r){
+    return '<div class="lr lg-res">'+
+      (r.href?ftIcon(r.href):ic('file','fticon'))+
+      '<span class="fn">'+(r.href?'<a href="'+esc(r.href)+'" title="打开 '+esc(r.name)+'">'+esc(r.name)+'</a>':esc(r.name))+'</span>'+
+      '<span class="fnote">'+(r.note?esc(r.note):'')+'</span>'+
+      '<span class="c-op">'+(r.href?'<a class="ibtn" href="'+esc(r.href)+'" download title="下载 '+esc(r.name)+'">'+ic('download')+'</a>':'')+'</span>'+
+      '</div>';
+  }
+  /* 历史行操作按钮: 下载图标 + 微标签 */
+  function ibtn(href,label,title){
+    if(!href)return '';
+    return '<a class="ibtn" href="'+esc(href)+'" download title="'+esc(title||('下载 '+label))+'">'+ic('download')+'<span class="lb2">'+esc(label)+'</span></a>';
+  }
+  function chipTxt(txt,cls){return '<span class="chip '+(cls||'')+'">'+esc(txt)+'</span>'}
 
-  /* 版本时间线 */
-  function timeline(lines){
-    var out='<section><h2>'+ic2('clock','hi-acc')+'全部版本'+
-      '<span class="chip">版本号：固件 vA.D.E · 上位机 vD.F</span></h2>';
-    lines.forEach(function(line){
-      out+='<div class="line-hd"><span class="nm">'+esc(line.name)+'</span>'+
-        '<span class="chip acc">协议 D='+line.protocol+'</span>'+
-        (line.current?'<span class="chip grn">当前维护</span>':'<span class="chip gld">存档 · 不再更新</span>')+'</div>';
-      for(var i=line.releases.length-1;i>=0;i--)out+=relRow(line.releases[i],line);
+  /* ====== 历史行构造 (withCur: 最新行加徽标; old: 存档行弱化) ====== */
+  function hostRows(hrs,withCur,old){
+    var rows=[];
+    for(var i=hrs.length-1;i>=0;i--){
+      var h=hrs[i];
+      rows.push({v:'v'+h.ver,d:h.date,cur:withCur&&i===hrs.length-1,old:old,title:h.notes,
+        ops:ibtn(h.offline,'离线','下载离线版')+ibtn(h.online,'联网','下载联网版')});
+    }
+    return rows;
+  }
+  function fwRows(rels,withCur,old){
+    var rows=[];
+    for(var i=rels.length-1;i>=0;i--){
+      var r=rels[i];
+      rows.push({v:'v'+r.fw,d:r.date,cur:withCur&&i===rels.length-1,old:old,title:r.notes,
+        ops:(r.detail?'<a class="ibtn det" href="'+esc(r.detail)+'" title="查看发布详情">详细</a>':'')+
+            ibtn(r.fw_bin,'BIN','下载固件 BIN')+ibtn(r.fw_hex,'HEX','下载固件 HEX')});
+    }
+    return rows;
+  }
+  function histTable(rows){
+    /* 列头由 lb() 统一输出, 这里只输出数据行, 否则表头重复 */
+    var out='';
+    rows.forEach(function(r){
+      out+='<div class="lr lg-hist"><span class="hv'+(r.old?' old':'')+'"'+(r.title?' title="'+esc(r.title)+'"':'')+'>'+esc(r.v)+
+        (r.cur?'<span class="chip grn">最新</span>':'')+'</span>'+
+        '<span class="hdate">'+dateOrDash(r.d)+'</span>'+
+        '<span class="ops">'+r.ops+'</span></div>';
     });
+    return out;
+  }
+
+  /* ====== 上位机区块 (当前版 + 存档线并入历史) ====== */
+  function hostSection(line,arch){
+    var hrs=line.host_releases||[];
+    var cur=hrs.length?hrs[hrs.length-1]:null;
+    var out='<section><h2>'+ic('monitor','hi-acc')+'上位机';
+    if(cur){
+      out+='<span class="v">v'+esc(cur.ver)+'</span><span class="date">'+dateOrDash(cur.date)+'</span>'+
+        '<span class="extras">'+
+          (cur.web?'<a class="btn sm plain" href="'+esc(cur.web)+'">'+ic('monitor')+'在线使用</a>':'')+
+        '</span>';
+    }
+    out+='</h2>';
+    if(!cur){out+='<div class="status">暂无发布</div></section>';return out;}
+    out+=lb(null,null,HEAD_FILES,[
+      frow(cur.offline,'离线版，无检查更新与固件在线下载功能',cur.date),
+      frow(cur.online,'联网版，含在线固件库 / 检查更新，断网自动降级',cur.date)
+    ]);
+    var rows=hostRows(hrs,true);
+    arch.forEach(function(l){rows=rows.concat(hostRows(l.host_releases||[],false,true));});
+    out+=lb('历史版本',null,HEAD_HIST,histTable(rows));
     return out+'</section>';
   }
 
+  /* ====== 固件区块 (当前版 + 存档资料并入相关资料) ====== */
+  function fwSection(line,arch){
+    var rels=line.releases||[];
+    var cur=rels.length?rels[rels.length-1]:null;
+    var h=cur?cur.host||{}:{};
+    var out='<section><h2>'+ic('bolt','hi-acc')+'固件';
+    if(cur){
+      out+='<span class="v">v'+esc(cur.fw)+'</span><span class="date">'+dateOrDash(cur.date)+'</span>'+
+        '<span class="extras">'+(h.ver?chipTxt('配套上位机 v'+h.ver):'')+'</span>';
+    }
+    out+='</h2>';
+    if(!cur){out+='<div class="status">暂无发布</div></section>';return out;}
+    out+=lb(null,null,HEAD_FILES,[
+      frow(cur.fw_bin,'固件二进制（上位机刷写用）',cur.date),
+      frow(cur.fw_hex,'HEX 格式（烧录器直刷）',cur.date)
+    ]);
+    var rs=(line.resources||[]).slice();
+    arch.forEach(function(l){rs=rs.concat(l.resources||[]);});
+    if(rs.length){
+      out+=lb('相关资料',null,HEAD_RES,rs.map(rrow));
+    }
+    var rows=fwRows(rels,true);
+    arch.forEach(function(l){rows=rows.concat(fwRows(l.releases||[],false,true));});
+    out+=lb('历史版本',null,HEAD_HIST,histTable(rows));
+    return out+'</section>';
+  }
+
+  /* ====== Bootloader 区块 ====== */
+  function blSection(bl){
+    if(!bl||!bl.ver)return '';
+    var out='<section><h2>'+ic('chip','hi-gold')+'Bootloader'+
+      '<span class="v">v'+esc(bl.ver)+'</span>'+
+      '<span class="chip gld">固件升级引导</span></h2>';
+    out+=lb(null,null,HEAD_FILES,[frow(bl.file,'仅产线首次烧录（经 ST-LINK 写入）；日常固件升级在上位机内完成',null)]);
+    var rows=[{v:'v'+bl.ver,d:null,cur:true,ops:ibtn(bl.file,'BIN','下载 Bootloader BIN')}];
+    var his=bl.history||[];
+    for(var i=his.length-1;i>=0;i--){
+      var b=his[i];
+      rows.push({v:'v'+b.ver,d:b.date,ops:ibtn(b.file,'BIN','下载 Bootloader BIN')});
+    }
+    out+=lb('历史版本',null,HEAD_HIST,histTable(rows));
+    return out+'</section>';
+  }
+
+  /* ====== 渲染 ====== */
   fetch('releases.json',{cache:'no-cache'}).then(function(r){
     if(!r.ok)throw new Error('HTTP '+r.status);
     return r.json();
   }).then(function(m){
     var app=document.getElementById('app');
-    var cur=null;
-    m.lines.forEach(function(l){if(l.current)cur=l});
+    var lines=(m.lines||[]).slice().sort(function(a,b){return (b.current?1:0)-(a.current?1:0)});
+    var cur=lines.filter(function(l){return l.current});
+    var arch=lines.filter(function(l){return !l.current});
+    if(!cur.length&&lines.length){cur=[lines[0]];arch=lines.slice(1);}
+    var line=cur[0];
     var html='';
-    if(cur)html+=latestCard(cur);
-    html+=timeline(m.lines);
-    app.innerHTML=html;
+    if(line){
+      html+=hostSection(line,arch);
+      html+=fwSection(line,arch);
+    }
+    html+=blSection(m.bootloader);
+    app.innerHTML=html||'<div class="status">暂无版本信息</div>';
     if(m.updated){var ft=document.getElementById('ft-upd');if(ft)ft.textContent='版本清单更新于 '+m.updated;}
   }).catch(function(e){
     document.getElementById('app').innerHTML=

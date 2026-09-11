@@ -3390,9 +3390,11 @@ async function firmwareUpdate(){
   selectDiv.onmouseleave=()=>{selectDiv.style.borderColor=border;selectDiv.style.background=inputBg};
   body.insertBefore(selectDiv, footer);   /* 拖拽区放在按钮行之前 */
 
-  let fwBuf=null,fwMode='manual';
+  let fwBuf=null,fwMode='manual',fwModeSig=null;
+  const waitModeChange=()=>new Promise(r=>{fwModeSig=r});   // 模式切换信号: 打断当前分支 await, 循环按新模式重入
   const DROP_HTML=`<div style="font-size:36px;margin-bottom:6px">📁</div><div style="font-size:14px;color:${text};margin-bottom:4px">${UI_TEXT.fwUpdate.dropTitle}</div><div style="font-size:12px;color:${muted}">${UI_TEXT.fwUpdate.dropHint}</div>`;
   // 联网版: 「手动选择固件 / 在线固件库」双入口 (online.js 提供; 完全离线打包不含该模块 → 不渲染此行)
+  let setTab=m=>{};   // 离线包无 tab, 空实现; 联网版下方赋实际实现 (switchManual 回退也走它)
   if(window.MDC_ONLINE&&window.MDCOnline){
     let tabs=document.createElement('div');
     tabs.id='fw-tabs';
@@ -3401,11 +3403,14 @@ async function firmwareUpdate(){
     const TAB_OFF=`flex:1;padding:8px 0;border:1px solid ${border};border-radius:8px;background:transparent;color:${muted};font-size:13px;cursor:pointer`;
     tabs.innerHTML=`<button id="fw-tab-manual" style="${TAB_ON}">📁 ${UI_TEXT.fwUpdate.tabManual||'手动选择固件'}</button><button id="fw-tab-online" style="${TAB_OFF}">🌐 ${UI_TEXT.fwUpdate.tabOnline||'在线固件库'}</button>`;
     body.insertBefore(tabs, selectDiv);
-    const setTab=m=>{
+    setTab=m=>{
+      if(fwMode===m)return;
       fwMode=m;
       tabs.querySelector('#fw-tab-manual').style.cssText=m==='manual'?TAB_ON:TAB_OFF;
       tabs.querySelector('#fw-tab-online').style.cssText=m==='online'?TAB_ON:TAB_OFF;
       if(m==='manual')selectDiv.innerHTML=DROP_HTML;
+      else selectDiv.onclick=selectDiv.ondragover=selectDiv.ondragleave=selectDiv.ondrop=null;   // 清掉手动模式挂的拖拽/点选事件
+      if(fwModeSig){const r=fwModeSig;fwModeSig=null;r()}   // 打断正在等待的分支
     };
     tabs.querySelector('#fw-tab-manual').onclick=()=>setTab('manual');
     tabs.querySelector('#fw-tab-online').onclick=()=>setTab('online');
@@ -3413,24 +3418,35 @@ async function firmwareUpdate(){
   while(!fwBuf){
     if(fwMode==='online'){
       // 在线固件库: 拉发布页 releases.json → 选版本 → 带进度下载; 拿到的字节流与手动路径同流 (trailer 校验/刷写共用)
+      delete selectDiv.dataset.olCancel;
       try{
-        fwBuf=await MDCOnline.pickOnlineFirmware(selectDiv);
+        const pickP=MDCOnline.pickOnlineFirmware(selectDiv);
+        pickP.catch(()=>{});   // 切走后旧 pick 经 olCancel 自行中止, 独立挂 catch 防 unhandled rejection
+        const got=await Promise.race([pickP,waitModeChange().then(()=>{selectDiv.dataset.olCancel='1';return'SWITCH'})]);
+        if(got==='SWITCH')continue;
+        fwBuf=got;
         if(!fwBuf||!fwBuf.length){fwBuf=null;selectDiv.innerHTML=`<div style="font-size:13px;color:${red}">下载内容为空, 请重试</div>`;await new Promise(r=>setTimeout(r,800))}
       }catch(e){
         if(!document.getElementById('fw-overlay')){cleanup();return}   // 对话框已被取消
-        if(e&&e.switchManual){fwMode='manual';selectDiv.innerHTML=DROP_HTML;continue}
+        if(e&&e.switchManual){setTab('manual');continue}   // 回退走 setTab, 同步 tab 高亮/事件清理
         selectDiv.innerHTML=`<div style="font-size:13px;color:${red};padding:8px 0">在线获取失败: ${e&&e.message?e.message:'网络错误'}</div><div style="font-size:12px;color:${muted}">可切换「手动选择固件」后重试</div>`;
         await new Promise(r=>setTimeout(r,1200));   // 防止网络异常时 busy-loop
       }
     }else{
-      fwBuf=await new Promise(resolve=>{
-        let inp=document.createElement('input');inp.type='file';inp.accept='.bin';
-        inp.onchange=async()=>{try{let f=inp.files[0];resolve(f?new Uint8Array(await f.arrayBuffer()):null)}catch(e){console.error('[FW] file read error:',e);resolve(null)}};
-        selectDiv.onclick=()=>inp.click();
-        selectDiv.ondragover=e=>{e.preventDefault();selectDiv.style.borderColor=accent};
-        selectDiv.ondragleave=()=>{selectDiv.style.borderColor=border};
-        selectDiv.ondrop=async e=>{e.preventDefault();selectDiv.style.borderColor=border;try{let f=e.dataTransfer.files[0];resolve(f?new Uint8Array(await f.arrayBuffer()):null)}catch(ex){console.error('[FW] drop read error:',ex);resolve(null)}};
-      });
+      const got=await Promise.race([
+        new Promise(resolve=>{
+          let inp=document.createElement('input');inp.type='file';inp.accept='.bin';
+          inp.onchange=async()=>{try{let f=inp.files[0];resolve(f?new Uint8Array(await f.arrayBuffer()):null)}catch(e){console.error('[FW] file read error:',e);resolve(null)}};
+          inp.oncancel=()=>resolve(null);   // 取消文件对话框 → 回拖拽区 (否则 promise 永挂, tab 切换失效)
+          selectDiv.onclick=()=>inp.click();
+          selectDiv.ondragover=e=>{e.preventDefault();selectDiv.style.borderColor=accent};
+          selectDiv.ondragleave=()=>{selectDiv.style.borderColor=border};
+          selectDiv.ondrop=async e=>{e.preventDefault();selectDiv.style.borderColor=border;try{let f=e.dataTransfer.files[0];resolve(f?new Uint8Array(await f.arrayBuffer()):null)}catch(ex){console.error('[FW] drop read error:',ex);resolve(null)}};
+        }),
+        waitModeChange().then(()=>'SWITCH')
+      ]);
+      if(got==='SWITCH')continue;
+      fwBuf=got;
       if(!fwBuf)selectDiv.innerHTML=`<div style="font-size:36px;margin-bottom:6px">📁</div><div style="font-size:14px;color:${text};margin-bottom:4px">${UI_TEXT.fwUpdate.noFileTitle}</div><div style="font-size:12px;color:${red}">${UI_TEXT.fwUpdate.noFileHint}</div>`;
     }
   }
@@ -3657,7 +3673,8 @@ async function firmwareUpdate(){
 //   2. 自更新检查   — 启动后比对发布页最新上位机版本, 有新版页面底部绿色提示条
 //   3. 配套上位机引导 — 设备协议 D 与上位机不符时, 自动找到配套上位机并引导跳转/下载
 //
-// 数据源: 发布页根目录 releases.json (单一事实来源, 发布页同款)
+// 数据源: 发布页根目录 releases.json (单一事实来源, 发布页同款);
+//         当前站点优先 (按页面位置向上试探), GitHub 发布页兜底
 // 断网策略: 所有 fetch 失败均静默降级/提示, 不影响任何离线功能
 // 打包: build_release.ps1 联网变体才会内联本文件; 离线变体无此文件 →
 //       各挂载点用 window.MDC_ONLINE 特性检测, 离线包自然走原逻辑
@@ -3665,35 +3682,69 @@ async function firmwareUpdate(){
 window.MDC_ONLINE = true;
 
 // ====== 配置 ======
-var MANIFEST_URL = 'https://mumu-elec.github.io/mdc-pub/releases.json';
-var MANIFEST_BASE = 'https://mumu-elec.github.io/mdc-pub/';   // 相对路径拼接基准 (manifest.site 优先)
+var MANIFEST_URL = 'https://mumu-elec.github.io/mdc-pub/releases.json';   // 兜底数据源: GitHub 发布页
+var MANIFEST_BASE = 'https://mumu-elec.github.io/mdc-pub/';               // 兜底下载基准
 
 // ====== 内部状态 ======
 var _mfPromise = null;          // manifest 缓存 (本会话一次, 失败可重试)
+var _mfBase = null;             // 实际命中的数据源目录 (当前站点优先; 未命中前为 null → 用兜底)
+var _mfUrl = MANIFEST_URL;      // 实际命中的 manifest 地址 (数据来源展示用)
 var _suggestedD = {};           // 配套引导去重: 已提示过的设备协议 D
 var _huDismissed = sessionStorage.getItem('mdc-hu-dismissed') || '';  // 自更新提示条已忽略的版本
 
 // ====== 基础工具 ======
 function _mdcCss(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
 function _mdcEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]}); }
-function _mfcAbs(rel, site){
+// manifest 相对路径 → 绝对地址 (命中数据源站点优先, 兜底 GitHub 发布页)
+function _mfcAbs(rel){
   if(/^https?:/i.test(rel)) return rel;
-  return (site || MANIFEST_BASE).replace(/\/+$/,'') + '/' + rel;
+  return (_mfBase || MANIFEST_BASE).replace(/\/+$/,'') + '/' + rel;
 }
 function _mfcVer(s){                       // "2.1" → [2,1]; 异常返回 [0,0]
   var m = /^(\d+)\.(\d+)$/.exec(String(s||'').trim());
   return m ? [parseInt(m[1]), parseInt(m[2])] : [0,0];
 }
 
-// manifest 拉取 (带缓存 + 10s 超时); 失败时清缓存, 下次调用重试
+// 候选数据源: 当前站点优先 — 页面可位于 站点根 / web/<线>/ / release/, 逐级向上试探 releases.json;
+// file:// 打开或当前站点全无 → 落到 GitHub 兜底。命中哪个源, 固件/上位机下载就跟随哪个源
+function _mfCandidates(){
+  var out = [], seen = {};
+  function push(u){ if(!seen[u]){ seen[u] = 1; out.push(u); } }
+  if(/^https?:/i.test(location.protocol)){
+    ['../../releases.json','../releases.json','./releases.json'].forEach(function(p){
+      try{ push(new URL(p, location.href).href); }catch(e){}
+    });
+  }
+  push(MANIFEST_URL);
+  return out;
+}
+
+// 单个候选源拉取 (10s 超时); 非 2xx / JSON 解析失败都算未命中
+function _fetchJson(url){
+  var ctl = ('AbortController' in window) ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function(){ctl.abort();}, 10000) : null;
+  return fetch(url, {cache:'no-cache', signal: ctl ? ctl.signal : undefined}).then(function(r){
+    if(timer) clearTimeout(timer);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).catch(function(e){ if(timer) clearTimeout(timer); throw e; });
+}
+
+// manifest 拉取 (候选源依次尝试, 命中即缓存基准; 全部失败清缓存, 下次调用重试)
 function mdcManifest(){
   if(_mfPromise) return _mfPromise;
   _mfPromise = (function(){
-    var ctl = ('AbortController' in window) ? new AbortController() : null;
-    var timer = ctl ? setTimeout(function(){ctl.abort();}, 10000) : null;
-    return fetch(MANIFEST_URL, {cache:'no-cache', signal: ctl ? ctl.signal : undefined})
-      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-      .finally(function(){ if(timer) clearTimeout(timer); });
+    var urls = _mfCandidates(), i = 0;
+    function attempt(){
+      if(i >= urls.length) return Promise.reject(new Error('数据源不可用'));
+      var url = urls[i++];
+      return _fetchJson(url).then(function(mf){
+        _mfUrl = url;
+        _mfBase = url.slice(0, url.lastIndexOf('/') + 1);
+        return mf;
+      }).catch(function(){ return i < urls.length ? attempt() : Promise.reject(new Error('数据源不可用')); });
+    }
+    return attempt();
   })().catch(function(e){ _mfPromise = null; throw e; });
   return _mfPromise;
 }
@@ -3755,7 +3806,7 @@ function mdcPickOnlineFirmware(container){
         '<div style="padding:10px 4px;font-size:13px">'+spin+' 正在下载 <b>v'+r.fw+'</b> …</div>'+
         '<div style="background:'+_mdcCss('--border')+';border-radius:4px;height:8px;margin:6px 0"><div class="_ol-bar" style="height:8px;background:'+acc+';border-radius:4px;width:0%;transition:width .2s"></div></div>'+
         '<div class="_ol-pct" style="font-size:12px;color:'+_mdcCss('--muted')+';text-align:right">0%</div>';
-      mdcFetchBuffer(_mfcAbs(r.fw_bin, null), function(p, got, total){
+      mdcFetchBuffer(_mfcAbs(r.fw_bin), function(p, got, total){
         var bar = container.querySelector('._ol-bar'), pct = container.querySelector('._ol-pct');
         if(bar) bar.style.width = p.toFixed(1)+'%';
         if(pct) pct.textContent = Math.round(p)+'% ('+(got/1024).toFixed(0)+' / '+(total/1024).toFixed(0)+' KB)';
@@ -3779,7 +3830,7 @@ function mdcPickOnlineFirmware(container){
               '</div>';
           }
         });
-        html += '</div><div style="font-size:11.5px;color:'+_mdcCss('--muted')+';margin-top:6px">数据来源: '+MANIFEST_URL.replace('https://','')+' · 点击版本即下载</div>';
+        html += '</div><div style="font-size:11.5px;color:'+_mdcCss('--muted')+';margin-top:6px">数据来源: '+_mfUrl.replace(/^https?:\/\//,'')+' · 点击版本即下载</div>';
         container.innerHTML = html;
         Array.prototype.forEach.call(container.querySelectorAll('._ol-rel'), function(el){
           el.onmouseenter = function(){ el.style.borderColor = acc; };
@@ -3791,7 +3842,7 @@ function mdcPickOnlineFirmware(container){
     run();
     // 对话框被取消(overlay 移除)时中止
     (function watch(){
-      if(!document.getElementById('fw-overlay')){ reject('cancel'); return; }
+      if(!document.getElementById('fw-overlay')||container.dataset.olCancel==='1'){ reject('cancel'); return; }   // 对话框关闭或已被切走 (olCancel 置位) 都中止
       setTimeout(watch, 300);
     })();
   });
@@ -3840,11 +3891,11 @@ function mdcShowUpdateBar(text, host){
   document.body.appendChild(bar);
   bar.querySelector('#ol-hu-go').onclick = function(){
     // 优先在线打开, 否则下载联网版/离线版文件
-    if(host.web){ window.open(_mfcAbs(host.web, null), '_blank'); return; }
+    if(host.web){ window.open(_mfcAbs(host.web), '_blank'); return; }
     mdcManifest().then(function(mf){
       var f = host.online || host.offline;
       var name = f ? f.split('/').pop() : ('电机上位机-v'+host.ver+'.html');
-      return mdcFetchBuffer(_mfcAbs(f, null)).then(function(buf){ mdcSaveBlob(buf, name, 'text/html'); });
+      return mdcFetchBuffer(_mfcAbs(f)).then(function(buf){ mdcSaveBlob(buf, name, 'text/html'); });
     }).catch(function(){ /* 静默 */ });
   };
   bar.querySelector('#ol-hu-x').onclick = function(){
@@ -3884,14 +3935,14 @@ function mdcSuggestHostForProtocol(devD){
     document.body.appendChild(ov);
     var close = function(){ ov.remove(); };
     ov.querySelector('#ol-sg-no').onclick = close;
-    if(h.web) ov.querySelector('#ol-sg-web').onclick = function(){ window.open(_mfcAbs(h.web, null), '_blank'); close(); };
+    if(h.web) ov.querySelector('#ol-sg-web').onclick = function(){ window.open(_mfcAbs(h.web), '_blank'); close(); };
     ov.querySelector('#ol-sg-off').onclick = function(){
-      mdcFetchBuffer(_mfcAbs(h.offline, null)).then(function(buf){
+      mdcFetchBuffer(_mfcAbs(h.offline)).then(function(buf){
         mdcSaveBlob(buf, h.offline.split('/').pop(), 'text/html'); close();
       }).catch(function(){});
     };
     if(h.online) ov.querySelector('#ol-sg-on').onclick = function(){
-      mdcFetchBuffer(_mfcAbs(h.online, null)).then(function(buf){
+      mdcFetchBuffer(_mfcAbs(h.online)).then(function(buf){
         mdcSaveBlob(buf, h.online.split('/').pop(), 'text/html'); close();
       }).catch(function(){});
     };

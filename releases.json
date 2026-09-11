@@ -1,7 +1,12 @@
 {
   "updated": "2026-09-11",
   "site": "https://mumu-elec.github.io/mdc-pub",
-  "bootloader": { "ver": "1.0", "file": "release/bootloader-v1.0.bin" },
+  "bootloader": {
+    "ver": "1.0",
+    "file": "release/bootloader-v1.0.bin",
+    "notes": "仅产线首次烧录需要（经 ST-LINK 写入）；日常固件升级在上位机「固件升级」内完成，无需单独刷写 bootloader。",
+    "history": []
+  },
   "manual": { "ver": "2.0", "file": "docs/technical-manual.md" },
   "lines": [
     {
@@ -9,6 +14,22 @@
       "protocol": 2,
       "name": "v2 线 · 底盘 / 单电机一体",
       "current": true,
+      "resources": [
+        { "name": "技术手册 v2.0（当前版）", "href": "docs/technical-manual.md", "note": "硬件规格 / 接线 / 通信协议 / 底盘功能 / 固件升级 / 故障排查；v2.0 发布快照见 docs/v2/2.0/" },
+        { "name": "例程包 v2.0", "href": "docs/v2/2.0/mdc_examples_v2.0.zip", "note": "Python×6 + Arduino×1，248B 协议口径（D=2），字节级自测通过" },
+        { "name": "例程库 mdc_lib（248B 对齐版整理中）", "href": "mdc_lib/README.md", "note": "12 平台通用调用库；当前按 231B 旧布局（v1 线协议）编写，对齐 v2 线 248B 前，v2 线配置读写请用例程包 v2.0" },
+        { "name": "通信协议规范（231B 旧口径）", "href": "mdc_lib/协议规范.md", "note": "v2 线协议权威版本以技术手册 v2.0 §5 为准（248B）；本规范待对齐后更新" }
+      ],
+      "host_releases": [
+        {
+          "ver": "2.0",
+          "date": "2026-09-11",
+          "notes": "对外首发：底盘 / 单电机一体上位机（协议 D=2，与固件 v1.2.0 配套）",
+          "offline": "release/电机上位机-v2.0.html",
+          "online": "release/电机上位机-v2.0-online.html",
+          "web": "web/v2/"
+        }
+      ],
       "releases": [
         {
           "fw": "1.2.0",
@@ -16,6 +37,18 @@
           "notes": "对外首发：底盘 / 单电机一体固件（协议 D=2），底盘预设设为 0 即为四路独立电机模式",
           "fw_bin": "release/motor_driver_ctrl-v1.2.0.bin",
           "fw_hex": "release/motor_driver_ctrl-v1.2.0.hex",
+          "detail": "fw/v1.2.0.html",
+          "highlights": [
+            "对外首发：底盘 / 单电机一体固件（协议 D=2）",
+            "底盘预设：差速 / 麦轮 / 三轮全向 / 四轮全向；预设设为 0 即四路独立电机",
+            "速度 / 位置闭环 + PID 自整定",
+            "SBUS / ELRS(CRSF) / UART 自动识别",
+            "上位机「固件升级」一键在线刷写（Bootloader）"
+          ],
+          "resources": [
+            { "name": "技术手册 v2.0（本版随发）", "href": "docs/v2/2.0/technical-manual.md", "note": "v2.0 发布快照，永不覆盖" },
+            { "name": "例程包 v2.0", "href": "docs/v2/2.0/mdc_examples_v2.0.zip", "note": "Python×6 + Arduino×1（248B 协议口径）" }
+          ],
           "host": {
             "ver": "2.0",
             "offline": "release/电机上位机-v2.0.html",
@@ -30,6 +63,29 @@
       "protocol": 1,
       "name": "v1 线 · 存档",
       "current": false,
+      "resources": [
+        { "name": "技术手册 v1.2（存档）", "href": "docs/v1/1.2/technical-manual.md", "note": "v1 线配套手册（存档末版），发布快照永不覆盖" },
+        { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf", "note": "v1.2 随线发布 PDF 版" },
+        { "name": "关于例程库与协议规范", "note": "v1 线已存档，不补新例程；站上 mdc_lib 例程库与协议规范按 231B 布局（v1 协议时代）编写，可作 v1 线参考，其头部「配套 v1.2.0+/D=2」声明有误待更正，248B 对齐版整理中" }
+      ],
+      "host_releases": [
+        {
+          "ver": "1.0",
+          "date": "2026-08-15",
+          "notes": "首个对外发布，配套固件 v1.1.0（协议 D=1）",
+          "offline": "release/电机上位机-v1.0.html",
+          "online": null,
+          "web": null
+        },
+        {
+          "ver": "1.1",
+          "date": "2026-09-10",
+          "notes": "v1 线最终版本：联网版（在线固件库 / 更新检查）与完全离线版双形态，配套固件 v1.1.1 / v1.1.2",
+          "offline": "release/电机上位机-v1.1.html",
+          "online": "release/电机上位机-v1.1-online.html",
+          "web": "web/v1/"
+        }
+      ],
       "releases": [
         {
           "fw": "1.1.0",
@@ -37,6 +93,17 @@
           "notes": "首个对外发布（统一 v1 版本号）",
           "fw_bin": "release/motor_driver_ctrl-v1.1.0.bin",
           "fw_hex": "release/motor_driver_ctrl-v1.1.0.hex",
+          "detail": "fw/v1.1.0.html",
+          "highlights": [
+            "首个对外发布（统一 v1 版本号）",
+            "四路直流电机驱动，速度 / 位置闭环",
+            "SBUS / ELRS(CRSF) / UART 自动识别",
+            "文本指令终端 + 二进制帧协议"
+          ],
+          "resources": [
+            { "name": "技术手册 v1.2（v1 线配套）", "href": "docs/v1/1.2/technical-manual.md", "note": "v1 线配套手册（存档末版）" },
+            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" }
+          ],
           "host": {
             "ver": "1.0",
             "offline": "release/电机上位机-v1.0.html",
@@ -50,6 +117,14 @@
           "notes": "修复：遥控行程开环默认值 sbus_param 10000→1000",
           "fw_bin": "release/motor_driver_ctrl-v1.1.1.bin",
           "fw_hex": "release/motor_driver_ctrl-v1.1.1.hex",
+          "detail": "fw/v1.1.1.html",
+          "highlights": [
+            "修复：遥控行程开环默认值 sbus_param 10000→1000"
+          ],
+          "resources": [
+            { "name": "技术手册 v1.2（沿用首发）", "href": "docs/v1/1.2/technical-manual.md", "note": "bug 修复版：无新功能不更新资料，沿用 v1 线手册（存档）" },
+            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" }
+          ],
           "host": {
             "ver": "1.1",
             "offline": "release/电机上位机-v1.1.html",
@@ -63,6 +138,14 @@
           "notes": "修复：固件版本显示错误跟随板载硬件版本（A 改用编译期 FW_HW_MAJOR）",
           "fw_bin": "release/motor_driver_ctrl-v1.1.2.bin",
           "fw_hex": "release/motor_driver_ctrl-v1.1.2.hex",
+          "detail": "fw/v1.1.2.html",
+          "highlights": [
+            "修复：固件版本显示错误跟随板载硬件版本（A 改用编译期 FW_HW_MAJOR）"
+          ],
+          "resources": [
+            { "name": "技术手册 v1.2（沿用首发）", "href": "docs/v1/1.2/technical-manual.md", "note": "bug 修复版：无新功能不更新资料，沿用 v1 线手册（存档）" },
+            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" }
+          ],
           "host": {
             "ver": "1.1",
             "offline": "release/电机上位机-v1.1.html",
