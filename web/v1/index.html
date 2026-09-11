@@ -3716,7 +3716,7 @@ async function firmwareUpdate(){
 //
 // 三件套:
 //   1. 在线固件库   — 固件升级对话框内拉取发布页 releases.json, 下载固件后走既有刷写流程
-//   2. 自更新检查   — 启动后比对发布页最新上位机版本, 有新版页面底部绿色提示条
+//   2. 自更新检查   — 启动后比对发布页最新上位机版本, 有新版状态栏绿字提示 (仅提示, 无动作)
 //   3. 配套上位机引导 — 设备协议 D 与上位机不符时, 自动找到配套上位机并引导跳转/下载
 //
 // 数据源: 发布页根目录 releases.json (单一事实来源, 发布页同款);
@@ -3736,7 +3736,6 @@ var _mfPromise = null;          // manifest 缓存 (本会话一次, 失败可�
 var _mfBase = null;             // 实际命中的数据源目录 (当前站点优先; 未命中前为 null → 用兜底)
 var _mfUrl = MANIFEST_URL;      // 实际命中的 manifest 地址 (数据来源展示用)
 var _suggestedD = {};           // 配套引导去重: 已提示过的设备协议 D
-var _huDismissed = sessionStorage.getItem('mdc-hu-dismissed') || '';  // 自更新提示条已忽略的版本
 
 // ====== 基础工具 ======
 function _mdcCss(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
@@ -3930,64 +3929,35 @@ function mdcPickOnlineFirmware(container){
 }
 
 // ====== 2. 自更新检查 (app.js 启动钩子调用) ======
-// 同协议线内比 F(修复号); 若存在更高协议线则提示新一代。每次加载最多提示一次, 可关闭。
+// 同协议线内比 F(修复号); 若存在更高协议线则提示新一代。每次加载最多提示一次。
+// 只在状态栏绿字提示"有更新", 不做任何下载/跳转动作 (状态栏文字被后续操作正常覆盖)。
 function mdcCheckHostUpdate(){
   mdcManifest().then(function(mf){
     var own = mdcLineByProtocol(mf, HOST_VER.B);
-    var cur = null, newer = null, kind = '';
+    var newer = null;
     if(own){
       var h = own.releases[own.releases.length-1].host;
       var v = _mfcVer(h && h.ver);
-      if(v[0] === HOST_VER.B && v[1] > HOST_VER.C){ newer = h; cur = own; kind = 'patch'; }
+      if(v[0] === HOST_VER.B && v[1] > HOST_VER.C) newer = h;
     }
     if(!newer){
-      // 同线无更新 → 看有没有更高协议线 (如 D=2 上位机遇上已发布 D=3 线)
+      // 同线无更新 → 看有没有更高协议线 (如 D=1 上位机遇上已发布 D=2 线)
       for(var i=0;i<mf.lines.length;i++){
         var ln = mf.lines[i];
-        if(ln.protocol > HOST_VER.B && ln.releases.length){
-          newer = ln.releases[ln.releases.length-1].host; cur = ln; kind = 'nextgen'; break;
-        }
+        if(ln.protocol > HOST_VER.B && ln.releases.length){ newer = ln.releases[ln.releases.length-1].host; break; }
       }
     }
     if(!newer || !newer.ver) return;
-    if(_huDismissed === newer.ver) return;   // 本会话已忽略该版本
-    var label = kind === 'nextgen'
-      ? '发现新一代上位机 v'+newer.ver+'（当前 v'+HOST_VER.B+'.'+HOST_VER.C+'）'
-      : '上位机有新版本 v'+newer.ver+' 可更新（当前 v'+HOST_VER.B+'.'+HOST_VER.C+'）';
-    mdcShowUpdateBar(label, newer);
+    var st = document.getElementById('status');
+    if(st) st.innerHTML = '<span style="color:var(--green)">发现新版本 v'+newer.ver+' 可更新 (当前 v'+HOST_VER.B+'.'+HOST_VER.C+')</span>';
   }).catch(function(){ /* 断网静默 */ });
-}
-
-function mdcShowUpdateBar(text, host){
-  if(document.getElementById('ol-update-bar')) return;
-  var bar = document.createElement('div');
-  bar.id = 'ol-update-bar';
-  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9000;display:flex;align-items:center;justify-content:center;gap:14px;'+
-    'padding:10px 16px;background:linear-gradient(180deg,#1d4433,#173828);border-top:1px solid #2e6a4c;box-shadow:0 -4px 18px rgba(0,0,0,.35);font-size:13.5px;color:#bfe8cd';
-  bar.innerHTML =
-    '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#4cd07d;box-shadow:0 0 8px #4cd07d"></span>'+
-    '<span>🟢 '+_mdcEsc(text)+' — 点击下载新版本</span>'+
-    '<button id="ol-hu-go" style="padding:5px 16px;border:none;border-radius:6px;background:#3a9a56;color:#fff;font-size:13px;font-weight:600;cursor:pointer">下载 v'+host.ver+'</button>'+
-    '<button id="ol-hu-x" title="本次会话不再提示" style="padding:2px 10px;border:none;border-radius:6px;background:transparent;color:#bfe8cd;font-size:15px;cursor:pointer">×</button>';
-  document.body.appendChild(bar);
-  bar.querySelector('#ol-hu-go').onclick = function(){
-    // 优先在线打开, 否则下载联网版/离线版文件
-    if(host.web){ window.open(_mfcAbs(host.web), '_blank'); return; }
-    mdcManifest().then(function(mf){
-      var f = host.online || host.offline;
-      var name = f ? f.split('/').pop() : ('电机上位机-v'+host.ver+'.html');
-      return mdcFetchBuffer(_mfcAbs(f)).then(function(buf){ mdcSaveBlob(buf, name, 'text/html'); });
-    }).catch(function(){ /* 静默 */ });
-  };
-  bar.querySelector('#ol-hu-x').onclick = function(){
-    sessionStorage.setItem('mdc-hu-dismissed', host.ver);
-    bar.remove();
-  };
 }
 
 // ====== 3. 配套上位机引导 (config.js updateVerInfo 协议不匹配钩子调用) ======
 // devD: 设备固件上报的协议版本 (swD)。每会话每个 D 值只弹一次。
-// 扁平简约: 一句话说明 + 四选项 (跳转/下载在线/下载离线/取消), 样式走全站 Design Token。
+// 扁平简约: 标题 + 一句话说明 (含当前/目标版本) + 两行按钮 —
+//   行1: 下载在线 / 下载离线 (无边框文字按钮, 发布页 .btn 图标+文字同款);
+//   行2: 跳转 (accent 实底主按钮, 跳转前关闭当前串口连接释放给新页面) / 取消。
 function mdcSuggestHostForProtocol(devD){
   if(_suggestedD[devD]) return;
   _suggestedD[devD] = true;
@@ -4002,24 +3972,29 @@ function mdcSuggestHostForProtocol(devD){
       st.id = 'ol-sg-style';
       st.textContent =
         '#ol-sg .sg-go:hover{filter:brightness(1.08)}'+
-        '#ol-sg .sg-dl:hover{border-color:var(--muted);background:color-mix(in srgb,var(--muted) 7%,transparent)}'+
+        '#ol-sg .sg-dl:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}'+
         '#ol-sg .sg-no:hover{color:var(--text)}';
       document.head.appendChild(st);
     }
     var ov = document.createElement('div');
     ov.id = 'ol-sg';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:flex;align-items:center;justify-content:center';
+    // 扁平线性图标 (24 viewBox / stroke 2, 与全站及发布页 svg.ic 同风格)
     var warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;display:block"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
-    var base = 'padding:9px 0;border-radius:7px;font-size:13.5px;font-weight:600;cursor:pointer;text-align:center';
+    var icoDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
+    var icoGo = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+    var btn = 'display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:7px;font-size:13.5px;font-weight:600;cursor:pointer';
     ov.innerHTML =
       '<div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px 24px 18px;width:min(400px,90vw);box-shadow:0 12px 36px rgba(0,0,0,.28)">'+
         '<div style="display:flex;align-items:center;gap:8px;color:var(--red);font-size:15px;font-weight:700">'+warn+'协议版本不匹配</div>'+
-        '<div style="margin:12px 0 18px;font-size:13.5px;line-height:1.7;color:var(--text)">当前上位机协议版本与固件协议版本不匹配，是否跳转到对应版本的上位机？</div>'+
+        '<div style="margin:12px 0 18px;font-size:13.5px;line-height:1.7;color:var(--text)">当前上位机 <b>v'+HOST_VER.B+'.'+HOST_VER.C+'</b> 与设备固件协议不匹配，是否跳转到配套上位机 <b>v'+h.ver+'</b>？</div>'+
+        '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+          (h.online?'<button id="ol-sg-on" class="sg-dl" style="'+btn+';flex:1;padding:9px 0;border:none;background:transparent;color:var(--accent)">'+icoDl+'下载在线</button>':'')+
+          (h.offline?'<button id="ol-sg-off" class="sg-dl" style="'+btn+';flex:1;padding:9px 0;border:none;background:transparent;color:var(--accent)">'+icoDl+'下载离线</button>':'')+
+        '</div>'+
         '<div style="display:flex;gap:8px">'+
-          (h.web?'<button id="ol-sg-web" class="sg-go" style="'+base+';flex:1.1;border:none;background:var(--accent-solid);color:#fff">跳转</button>':'')+
-          (h.online?'<button id="ol-sg-on" class="sg-dl" style="'+base+';flex:1;border:1px solid var(--border);background:transparent;color:var(--text)">下载在线</button>':'')+
-          (h.offline?'<button id="ol-sg-off" class="sg-dl" style="'+base+';flex:1;border:1px solid var(--border);background:transparent;color:var(--text)">下载离线</button>':'')+
-          '<button id="ol-sg-no" class="sg-no" style="padding:9px 12px;border:none;border-radius:7px;background:transparent;color:var(--muted);font-size:13.5px;font-weight:600;cursor:pointer">取消</button>'+
+          (h.web?'<button id="ol-sg-web" class="sg-go" style="'+btn+';flex:1;padding:9px 0;border:none;background:var(--accent-solid);color:#fff">'+icoGo+'跳转到 v'+h.ver+'</button>':'')+
+          '<button id="ol-sg-no" class="sg-no" style="'+btn+';padding:9px 14px;border:none;background:transparent;color:var(--muted)">取消</button>'+
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
@@ -4032,13 +4007,17 @@ function mdcSuggestHostForProtocol(devD){
         btn.style.opacity = '.6';
         mdcFetchBuffer(_mfcAbs(url)).then(function(buf){
           mdcSaveBlob(buf, url.split('/').pop(), 'text/html'); close();
-        }).catch(function(){ btn.textContent = label; btn.style.opacity = ''; });
+        }).catch(function(){ btn.innerHTML = label; btn.style.opacity = ''; });
       };
     }
+    // 跳转: 先关闭当前串口连接 (释放串口给新打开的上位机页面), 再打开
     var bWeb = ov.querySelector('#ol-sg-web');
-    if(bWeb) bWeb.onclick = function(){ window.open(_mfcAbs(h.web), '_blank'); close(); };
-    dl(ov.querySelector('#ol-sg-on'), h.online, '下载在线');
-    dl(ov.querySelector('#ol-sg-off'), h.offline, '下载离线');
+    if(bWeb) bWeb.onclick = async function(){
+      try{ if(typeof disconnectSerial === 'function') await disconnectSerial(); }catch(e){}
+      window.open(_mfcAbs(h.web), '_blank'); close();
+    };
+    dl(ov.querySelector('#ol-sg-on'), h.online, icoDl+'下载在线');
+    dl(ov.querySelector('#ol-sg-off'), h.offline, icoDl+'下载离线');
     ov.querySelector('#ol-sg-no').onclick = close;
   }).catch(function(){ /* 断网静默: 版本行红叉本身仍在 */ });
 }
