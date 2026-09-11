@@ -1820,6 +1820,19 @@ async function toggleSerial(){
   await connectSerial();
 }
 
+// ====== RTS→NRST 引脚释放 (CH340N RTS# 直连 STM32 NRST, 与 v2 线同款) ======
+// CH340 驱动打开串口时会把 RTS# 拉低并保持 (NRST 拉低 → MCU 卡复位), 必须显式释放:
+// setRtsSignal(false) → RTS# 恢复高 → NRST 释放 → MCU 正常运行。
+// 命名兼容: Chrome ~M110 起 setSignals 只识别 requestToSend (旧短名 rts 已移除),
+// 先试新命名, TypeError 时降级旧命名 (老版本 Chrome)。
+async function setRtsSignal(assert){
+  try{
+    await port.setSignals({requestToSend:assert});
+  }catch(e){
+    await port.setSignals({rts:assert});   // 旧版 Chrome 降级
+  }
+}
+
 async function connectSerial(){
   try{
     let btn=document.getElementById('btn-connect');
@@ -1827,6 +1840,11 @@ async function connectSerial(){
     btn.className='btn-blue';
     btn.style.animation='none';
     port=await navigator.serial.requestPort();await port.open({baudRate:2000000});
+    // 恢复驱动造成的异常引脚状态 (RTS# 默认低 → NRST 卡复位), 不是主动复位;
+    // 立即 + 延迟各一次防驱动延迟拉低。
+    const releaseRts=async()=>{try{await setRtsSignal(false);}catch(e){console.warn('[SERIAL] 释放 RTS 失败:',e);}};
+    releaseRts();
+    setTimeout(releaseRts,300);
     writer=wrapWriter(port.writable.getWriter());
     stopAngry();
     btn.innerHTML=icon('i-check')+' 已连接 (点击断开)';
