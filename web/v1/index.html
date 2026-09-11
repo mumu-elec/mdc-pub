@@ -3978,20 +3978,21 @@ function mdcSuggestHostForProtocol(devD){
     var icoDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
     var icoGo = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
     var btn = 'display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:6px 10px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s ease,color .15s ease,opacity .15s ease';
-    var cap = 'font-family:Consolas,monospace;font-size:19px;font-weight:700;border-radius:8px;padding:4px 14px';
+    var capCur = 'font-family:Consolas,monospace;font-size:16px;font-weight:600;border-radius:8px;padding:4px 12px';
+    var capTgt = 'font-family:Consolas,monospace;font-size:21px;font-weight:700;border-radius:9px;padding:5px 16px';
     var sep = '<span style="width:1px;height:14px;background:var(--border);margin:0 7px"></span>';
     var arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;color:var(--muted)"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
     ov.innerHTML =
       '<div style="background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px 28px 20px;width:min(430px,92vw);aspect-ratio:1.618/1;display:flex;flex-direction:column;justify-content:space-evenly;text-align:center;box-shadow:0 12px 36px rgba(0,0,0,.28)">'+
         '<div style="display:flex;align-items:center;justify-content:center;gap:8px;color:var(--red);font-size:15px;font-weight:700;margin-bottom:14px">'+warn+'协议版本不匹配</div>'+
-        '<div style="display:flex;align-items:center;justify-content:center;gap:14px">'+
+        '<div style="display:flex;align-items:center;justify-content:center;gap:12px">'+
           '<div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">当前上位机</div>'+
-          '<div class="mono" style="'+cap+';color:var(--text);background:color-mix(in srgb,var(--muted) 10%,transparent)">v'+HOST_VER.B+'.'+HOST_VER.C+'</div></div>'+
+          '<div class="mono" style="'+capCur+';color:var(--muted);background:color-mix(in srgb,var(--muted) 10%,transparent)">v'+HOST_VER.B+'.'+HOST_VER.C+'</div></div>'+
           arrow+
-          '<div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">配套上位机</div>'+
-          '<div class="mono" style="'+cap+';color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)">v'+h.ver+'</div></div>'+
+          '<div><div style="font-size:11px;color:var(--accent);margin-bottom:3px">配套上位机</div>'+
+          '<div class="mono" style="'+capTgt+';color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)">v'+h.ver+'</div></div>'+
         '</div>'+
-        '<div style="font-size:12.5px;color:var(--muted);line-height:1.6">设备固件协议与当前上位机不匹配<br>是否跳转到配套版本？</div>'+
+        '<div style="font-size:12.5px;color:var(--muted);line-height:1.6">设备固件协议与当前上位机不匹配，是否跳转到配套版本？</div>'+
         '<div style="display:flex;justify-content:flex-end;align-items:center">'+
           '<button id="ol-sg-pub" class="sg-act" style="'+btn+'">'+icoGo+'发布页</button>'+
           (h.online?sep+'<button id="ol-sg-on" class="sg-act" style="'+btn+'">'+icoDl+'上位机v'+h.ver+'</button>':'')+
