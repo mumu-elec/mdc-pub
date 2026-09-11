@@ -2358,8 +2358,20 @@ async function handleFrame(cmd,data){
       let fwA=dv.getUint8(9,true);  /* 固件版本A (offset 9, 新固件写入; 0=旧固件 → 显示时回退硬件A) */
       updateVerInfo(hwA,hwB,hwC,swD,swE,fwA);
     }else{
-      console.warn('Config size mismatch: received '+data.length+' expected '+CONFIG_SIZE+'. Browser cache may be stale - hard refresh (Ctrl+Shift+R) recommended.');
-      document.getElementById('status').textContent='⚠ 参数长度不匹配('+data.length+'≠'+CONFIG_SIZE+') — 请强制刷新页面(Ctrl+Shift+R)';
+      // 协议版本不同 → 固件 sizeof(config_t) 与上位机 CONFIG_SIZE 不一致 (或页面缓存过旧)。
+      // 头部 magic/hw_ver/sw_ver 布局跨协议版本稳定 → 仍解析版本号: 版本行显示设备真实版本
+      // (协议 D 不匹配时红叉 + 触发配套上位机引导); 字段区 offset 不可信, 不应用配置。
+      console.warn('Config size mismatch: received '+data.length+' expected '+CONFIG_SIZE+'.');
+      if(data.length>=10){
+        let dv=new DataView(data.buffer,data.byteOffset,data.byteLength);
+        let hwA=dv.getUint8(4,true),hwB=dv.getUint8(5,true),hwC=dv.getUint8(6,true);
+        let swD=dv.getUint8(7,true),swE=dv.getUint8(8,true);
+        let fwA=dv.getUint8(9,true);  /* 固件版本A (offset 9, 新固件写入; 0=旧固件 → 显示时回退硬件A) */
+        updateVerInfo(hwA,hwB,hwC,swD,swE,fwA);
+        document.getElementById('status').textContent='⚠ 配置长度不匹配('+data.length+'B≠上位机'+CONFIG_SIZE+'B) — 协议版本不同或页面过旧, 参数未应用; 请刷新页面或使用配套上位机(见版本行)';
+      }else{
+        document.getElementById('status').textContent='⚠ 参数长度异常('+data.length+'B) — 设备响应无效';
+      }
     }
   }
   if(cmd===0xF0&&data.length>=32){if(rpmEnabled){
@@ -2700,7 +2712,10 @@ async function syncParams(isAuto){
   // isAuto=true (连接时自动同步) → TX 帧标记 auto, 不刷终端; 用户点「同步参数」按钮 → user
   document.getElementById('status').textContent='正在同步...';
   for(let attempt=1;attempt<=3;attempt++){
-    let res=await sendFrameAck(CMD_READ,[],{timeout:300,match:(c,d)=>c===CMD_READ&&d.length===CONFIG_SIZE,origin:isAuto?'auto':'user'});
+    /* match 接受任意完整头部的配置响应 (≥10B): 协议版本不同 → 固件 sizeof(config_t)
+     * 与上位机 CONFIG_SIZE 不同, 若按长度全等匹配会 3 次超时误报"设备无响应"。
+     * 帧过 CRC8 才到此处, ≥10B 即头部完整 — 版本解析/长度不匹配提示由 handleFrame 处理。 */
+    let res=await sendFrameAck(CMD_READ,[],{timeout:300,match:(c,d)=>c===CMD_READ&&d.length>=10,origin:isAuto?'auto':'user'});
     if(res.ok)return;                  /* handleFrame 已应用配置并更新状态 */
     if(res.reason==='superseded')return;
   }
@@ -5920,7 +5935,7 @@ async function firmwareUpdate(){
   selectDiv.onmouseleave=()=>{selectDiv.style.borderColor=border;selectDiv.style.background=inputBg};
   body.insertBefore(selectDiv, footer);   /* 拖拽区放在按钮行之前 */
 
-  let fwBuf=null,fwMode='manual',fwModeSig=null;
+  let fwBuf=null,fwMode='manual',fwModeSig=null,picking=true;   // picking: STEP1 选固件阶段; 点「开始下载」后置 false, tab 点击不再干预
   const waitModeChange=()=>new Promise(r=>{fwModeSig=r});   // 模式切换信号: 打断当前分支 await, 循环按新模式重入
   const DROP_HTML=`<div style="margin-bottom:6px"><svg class="ic" style="width:36px;height:36px;color:var(--muted)"><use href="#i-folder"/></svg></div><div style="font-size:14px;color:${text};margin-bottom:4px">${UI_TEXT.fwUpdate.dropTitle}</div><div style="font-size:12px;color:${muted}">${UI_TEXT.fwUpdate.dropHint}</div>`;
   // 联网版: 「手动选择固件 / 在线固件库」双入口 (online.js 提供; 完全离线打包不含该模块 → 不渲染此行)
@@ -5931,27 +5946,43 @@ async function firmwareUpdate(){
     tabs.style.cssText='display:flex;gap:8px;margin-bottom:10px';
     const TAB_ON=`flex:1;padding:8px 0;border:1px solid ${accent};border-radius:8px;background:color-mix(in srgb,${accent} 12%,transparent);color:${accent};font-size:13px;font-weight:600;cursor:pointer`;
     const TAB_OFF=`flex:1;padding:8px 0;border:1px solid ${border};border-radius:8px;background:transparent;color:${muted};font-size:13px;cursor:pointer`;
-    tabs.innerHTML=`<button id="fw-tab-manual" style="${TAB_ON}">📁 ${UI_TEXT.fwUpdate.tabManual||'手动选择固件'}</button><button id="fw-tab-online" style="${TAB_OFF}">🌐 ${UI_TEXT.fwUpdate.tabOnline||'在线固件库'}</button>`;
+    // tab 图标: 扁平线性 SVG, stroke=currentColor 跟随 tab 文字颜色 (激活=强调色/未激活=muted)
+    const icoTabDir=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-2px;margin-right:5px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+    const icoTabGlobe=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+    tabs.innerHTML=`<button id="fw-tab-manual" style="${TAB_ON}">${icoTabDir}${UI_TEXT.fwUpdate.tabManual||'手动选择固件'}</button><button id="fw-tab-online" style="${TAB_OFF}">${icoTabGlobe}${UI_TEXT.fwUpdate.tabOnline||'在线固件库'}</button>`;
     body.insertBefore(tabs, selectDiv);
     setTab=m=>{
-      if(fwMode===m)return;
+      // 「在线固件库」每次点击都重新进入并刷新列表; 已选固件后再点任一 tab = 放弃当前选择回到对应列表
+      if(!picking)return;                            // 「开始下载」已按下, tab 不再干预选择流程
+      if(fwMode===m&&m==='manual'&&!fwBuf)return;    // 手动模式下未选固件, 重复点击无动作
       fwMode=m;
       tabs.querySelector('#fw-tab-manual').style.cssText=m==='manual'?TAB_ON:TAB_OFF;
       tabs.querySelector('#fw-tab-online').style.cssText=m==='online'?TAB_ON:TAB_OFF;
+      if(fwBuf){fwBuf=null;goBtn.style.display='none';}   // 已选固件 → 点击 tab 即返回重选
       if(m==='manual')selectDiv.innerHTML=DROP_HTML;
-      else selectDiv.onclick=selectDiv.ondragover=selectDiv.ondragleave=selectDiv.ondrop=null;   // 清掉手动模式挂的拖拽/点选事件
-      if(fwModeSig){const r=fwModeSig;fwModeSig=null;r()}   // 打断正在等待的分支
+      selectDiv.onclick=selectDiv.ondragover=selectDiv.ondragleave=selectDiv.ondrop=null;   // 清掉手动模式挂的拖拽/点选事件 (在线列表由 pick 自渲染)
+      if(fwModeSig){const r=fwModeSig;fwModeSig=null;r()}   // 打断正在等待的分支 (选列表中 / 已选待 GO 均被唤醒)
     };
     tabs.querySelector('#fw-tab-manual').onclick=()=>setTab('manual');
     tabs.querySelector('#fw-tab-online').onclick=()=>setTab('online');
   }
-  while(!fwBuf){
+  let isCustomFw=false,fw_a,fw_b,fw_hw,fwConfirmed=false;   // 函数级作用域: STEP4/完成页仍引用
+  while(true){
+    if(fwBuf){
+      // 已选固件: 等「开始下载」; 点 tab 由 setTab 发信号打断 → 放弃已选回列表重选
+      const act=await Promise.race([
+        new Promise(resolve=>{goBtn.onclick=()=>resolve('GO')}),
+        waitModeChange().then(()=>'SWITCH')
+      ]);
+      if(act==='SWITCH'){fwBuf=null;goBtn.style.display='none';continue}
+      break;
+    }
     if(fwMode==='online'){
       // 在线固件库: 拉发布页 releases.json → 选版本 → 带进度下载; 拿到的字节流与手动路径同流 (trailer 校验/刷写共用)
       delete selectDiv.dataset.olCancel;
       try{
         const pickP=MDCOnline.pickOnlineFirmware(selectDiv);
-        pickP.catch(()=>{});   // 切走后旧 pick 经 olCancel 自行中止, 独立挂 catch 防 unhandled rejection
+        pickP.catch(()=>{});   // 切走/重进后旧 pick 经 olCancel+代数戳自行中止, 独立挂 catch 防 unhandled rejection
         const got=await Promise.race([pickP,waitModeChange().then(()=>{selectDiv.dataset.olCancel='1';return'SWITCH'})]);
         if(got==='SWITCH')continue;
         fwBuf=got;
@@ -5959,7 +5990,7 @@ async function firmwareUpdate(){
       }catch(e){
         if(!document.getElementById('fw-overlay')){cleanup();return}   // 对话框已被取消
         if(e&&e.switchManual){setTab('manual');continue}   // 回退走 setTab, 同步 tab 高亮/事件清理
-        selectDiv.innerHTML=`<div style="font-size:13px;color:${red};padding:8px 0">在线获取失败: ${e&&e.message?e.message:'网络错误'}</div><div style="font-size:12px;color:${muted}">可切换「手动选择固件」后重试</div>`;
+        selectDiv.innerHTML=`<div style="font-size:13px;color:${red};padding:8px 0">在线获取失败: ${e&&e.message?e.message:'网络错误'}</div><div style="font-size:12px;color:${muted}">可切换「手动选择固件」或再点「在线固件库」重试</div>`;
         await new Promise(r=>setTimeout(r,1200));   // 防止网络异常时 busy-loop
       }
     }else{
@@ -5979,44 +6010,45 @@ async function firmwareUpdate(){
       fwBuf=got;
       if(!fwBuf)selectDiv.innerHTML=`<div style="margin-bottom:6px"><svg class="ic" style="width:36px;height:36px;color:var(--muted)"><use href="#i-folder"/></svg></div><div style="font-size:14px;color:${text};margin-bottom:4px">${UI_TEXT.fwUpdate.noFileTitle}</div><div style="font-size:12px;color:${red}">${UI_TEXT.fwUpdate.noFileHint}</div>`;
     }
-  }
-  let isCustomFw=false,fw_a,fw_b,fw_hw,fwConfirmed=false;
-  if(fwBuf.length>=16){
-    let tail=fwBuf.slice(fwBuf.length-16);
-    let dv=new DataView(tail.buffer,tail.byteOffset,tail.byteLength);
-    if(dv.getUint32(0,true)===0x4D523031){
-      // trailer 完整性校验: size == len-16 且 crc32 与固件内容一致 (防篡改/损坏)
-      let fwSize=dv.getUint8(9)|(dv.getUint8(10)<<8)|(dv.getUint8(11)<<16);
-      let tailCrc=dv.getUint32(12,true);
-      let fwData=fwBuf.slice(0,fwBuf.length-16);
-      let okSize=(fwSize===fwData.length);
-      let okCrc=(crc32(fwData)===tailCrc);
-      if(!okSize||!okCrc){
-        let confirmed=await confirmCustomFirmware('trailer 校验失败: '+(okSize?'':'size 不符('+fwSize+'≠'+fwData.length+') ')+(okCrc?'':'CRC32 不匹配'));
-        if(!confirmed){cleanup();return}
-        isCustomFw=true; fwConfirmed=true;  // 已确认, 跳过下方第二次弹窗
-      }else{
-        fw_hw=dv.getUint8(4);      // A = 硬件主版本
-        fw_a=dv.getUint8(5);       // D = 协议版本 (SW_MAJOR)
-        fw_b=dv.getUint8(6);       // E = 固件Bug修复 (SW_PATCH)
-        // offset 7 = build (不对外显示), offset 8 = reserved
-      }
+    if(!fwBuf)continue;
+    // 新选固件: 重置校验状态 → trailer 校验 → 展示已选信息 → 出「开始下载」 (每次重选都会重跑)
+    isCustomFw=false;fwConfirmed=false;
+    if(fwBuf.length>=16){
+      let tail=fwBuf.slice(fwBuf.length-16);
+      let dv=new DataView(tail.buffer,tail.byteOffset,tail.byteLength);
+      if(dv.getUint32(0,true)===0x4D523031){
+        // trailer 完整性校验: size == len-16 且 crc32 与固件内容一致 (防篡改/损坏)
+        let fwSize=dv.getUint8(9)|(dv.getUint8(10)<<8)|(dv.getUint8(11)<<16);
+        let tailCrc=dv.getUint32(12,true);
+        let fwData=fwBuf.slice(0,fwBuf.length-16);
+        let okSize=(fwSize===fwData.length);
+        let okCrc=(crc32(fwData)===tailCrc);
+        if(!okSize||!okCrc){
+          let confirmed=await confirmCustomFirmware('trailer 校验失败: '+(okSize?'':'size 不符('+fwSize+'≠'+fwData.length+') ')+(okCrc?'':'CRC32 不匹配'));
+          if(!confirmed){cleanup();return}
+          isCustomFw=true; fwConfirmed=true;  // 已确认, 跳过下方第二次弹窗
+        }else{
+          fw_hw=dv.getUint8(4);      // A = 硬件主版本
+          fw_a=dv.getUint8(5);       // D = 协议版本 (SW_MAJOR)
+          fw_b=dv.getUint8(6);       // E = 固件Bug修复 (SW_PATCH)
+          // offset 7 = build (不对外显示), offset 8 = reserved
+        }
+      }else{isCustomFw=true}
     }else{isCustomFw=true}
-  }else{isCustomFw=true}
 
-  if(isCustomFw&&!fwConfirmed){
-    let confirmed=await confirmCustomFirmware();
-    if(!confirmed){cleanup();return}
-    selectDiv.innerHTML=`<div style="font-size:14px;color:${text}"><b>自定义固件</b> — ${fwBuf.length} bytes</div>`;
-  }else if(isCustomFw){
-    selectDiv.innerHTML=`<div style="font-size:14px;color:${text}"><b>固件校验失败（已确认继续）</b> — ${fwBuf.length} bytes</div>`;
-  }else{
-    selectDiv.innerHTML=`<div style="font-size:14px;color:${text}"><b>固件 v${fw_hw}.${fw_a}.${fw_b}</b> — ${fwBuf.length} bytes</div>`;
+    if(isCustomFw&&!fwConfirmed){
+      let confirmed=await confirmCustomFirmware();
+      if(!confirmed){cleanup();return}
+      selectDiv.innerHTML=`<div style="font-size:14px;color:${text}"><b>自定义固件</b> — ${fwBuf.length} bytes</div>`;
+    }else if(isCustomFw){
+      selectDiv.innerHTML=`<div style="font-size:14px;color:${text}"><b>固件校验失败（已确认继续）</b> — ${fwBuf.length} bytes</div>`;
+    }else{
+      selectDiv.innerHTML=`<div style="font-size:14px;color:${text}"><b>固件 v${fw_hw}.${fw_a}.${fw_b}</b> — ${fwBuf.length} bytes</div>`;
+    }
+    goBtn.style.display='';
+    console.log('[FW] STEP1: file selected, size=',fwBuf.length,'(waiting GO / tab switch)');
   }
-  goBtn.style.display='';
-
-  console.log('[FW] STEP1: file selected, size=',fwBuf.length, 'clicking go...');
-  await new Promise(resolve=>{goBtn.onclick=resolve});
+  picking=false;
   console.log('[FW] STEP1: GO clicked');
   if(!document.getElementById('fw-overlay')){return;}  // 已取消
 
@@ -6329,11 +6361,20 @@ function mdcSaveBlob(data, filename, mime){
 
 // ====== 1. 在线固件库 (固件升级对话框内调用) ======
 // container: 对话框内列表容器; 返回 Promise<Uint8Array> (固件原始字节, 含 16B trailer)
-// 取消/关框: reject('cancel'); 调用方负责 cleanup
+// 取消/关框/被同容器新一次进入取代: reject('cancel'); 调用方负责 cleanup
+// 列表行仅保留 版本号[最新]/更新日期/[下载] 按钮; 每次进入都重拉 releases.json (点 tab 即刷新)
 function mdcPickOnlineFirmware(container){
   return new Promise(function(resolve, reject){
+    // 代数戳: 同容器再次进入取列表时 gen+1, 旧实例见到代数不符自行退场 (防旧 fetch 回调覆盖新列表/吞掉点击)
+    var genStr = String((parseInt(container.dataset.olGen, 10) || 0) + 1);
+    container.dataset.olGen = genStr;
+    function stale(){
+      return container.dataset.olGen !== genStr || container.dataset.olCancel === '1' ||
+             !document.getElementById('fw-overlay');   // 对话框已关闭或已被切走
+    }
     var spin = '<div style="width:20px;height:20px;border:3px solid '+_mdcCss('--border')+';border-top-color:'+_mdcCss('--accent')+';border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:-5px"></div>';
     function fail(msg){
+      if(stale())return;
       container.innerHTML =
         '<div style="padding:18px 10px;text-align:center;font-size:13.5px;color:'+_mdcCss('--red')+'">在线固件库获取失败: '+msg+'</div>'+
         '<div style="text-align:center"><button class="_ol-retry" style="padding:7px 18px;border:1px solid '+_mdcCss('--border')+';border-radius:7px;background:transparent;color:'+_mdcCss('--text')+';font-size:13px;cursor:pointer;margin-right:8px">重试</button>'+
@@ -6342,48 +6383,74 @@ function mdcPickOnlineFirmware(container){
       container.querySelector('._ol-manual').onclick = function(){ reject({switchManual:true}); };
     }
     function pick(r){
+      if(stale())return;
       var acc = _mdcCss('--accent');
       container.innerHTML =
         '<div style="padding:10px 4px;font-size:13px">'+spin+' 正在下载 <b>v'+r.fw+'</b> …</div>'+
         '<div style="background:'+_mdcCss('--border')+';border-radius:4px;height:8px;margin:6px 0"><div class="_ol-bar" style="height:8px;background:'+acc+';border-radius:4px;width:0%;transition:width .2s"></div></div>'+
         '<div class="_ol-pct" style="font-size:12px;color:'+_mdcCss('--muted')+';text-align:right">0%</div>';
       mdcFetchBuffer(_mfcAbs(r.fw_bin), function(p, got, total){
+        if(stale())return;
         var bar = container.querySelector('._ol-bar'), pct = container.querySelector('._ol-pct');
         if(bar) bar.style.width = p.toFixed(1)+'%';
         if(pct) pct.textContent = Math.round(p)+'% ('+(got/1024).toFixed(0)+' / '+(total/1024).toFixed(0)+' KB)';
-      }).then(function(buf){ resolve(buf); })
+      }).then(function(buf){ if(stale())return; resolve(buf); })
         .catch(function(e){ fail(e.message||'网络错误'); });
     }
     function run(){
+      _mfPromise = null;   // 每次进入列表都重拉 releases.json (点「在线固件库」即刷新, 不吃会话缓存)
       container.innerHTML = '<div style="padding:22px 10px;text-align:center;font-size:13.5px;color:'+_mdcCss('--muted')+'">'+spin+' 正在获取发布页版本列表…</div>';
       mdcManifest().then(function(mf){
+        if(stale())return;
         var acc = _mdcCss('--accent');
         var html = '<div style="max-height:300px;overflow:auto">';
+        // 扁平线性图标 (与全站 icon 体系同款: 24 viewBox / stroke 2 / 圆角端点)
+        var icoDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;display:block"><path d="M21 15.5v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="m7 10.5 5 5 5-5"/><path d="M12 15.5V3"/></svg>';
+        var icoArr = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;display:block"><path d="m6 9 6 6 6-6"/></svg>';
+        var icoFw = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;display:block"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/><path d="M9 13.5h6M9 17h6"/></svg>';   // 固件文件图标
+        var icoDir = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;display:block"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';   // 线文件夹图标
         mf.lines.forEach(function(line){
-          html += '<div style="font-size:12px;color:'+_mdcCss('--muted')+';margin:10px 4px 4px">'+_mdcEsc(line.name)+' · 协议 D='+line.protocol+(line.current?' · <span style="color:#5fc178">当前线</span>':'')+'</div>';
+          // 折叠分组: 标题=线名+折叠箭头, 点击展开/再点收回 (默认当前线展开, 其余收回); 当前线标题用强调色区分
+          var open = !!line.current;
+          html += '<div class="_ol-grp" data-open="'+(open?1:0)+'" style="margin:8px 0 2px">'+
+            '<div class="_ol-hd" title="点击展开/收回" style="display:flex;align-items:center;gap:6px;padding:4px;cursor:pointer;user-select:none">'+
+              '<span style="display:inline-flex;flex-shrink:0;color:#eab308">'+icoDir+'</span>'+
+              '<span style="font-size:13px;font-weight:700;font-family:Consolas,monospace;color:'+(line.current?acc:_mdcCss('--text'))+'">'+_mdcEsc(line.id||line.name)+'</span>'+
+              '<span class="_ol-arr" style="display:inline-flex;color:'+_mdcCss('--muted')+';transition:transform .15s;transform:'+(open?'none':'rotate(-90deg)')+'">'+icoArr+'</span>'+
+            '</div>'+
+            '<div class="_ol-list" style="padding-left:3px;display:'+(open?'':'none')+'">';
           for(var i=line.releases.length-1;i>=0;i--){
             var r = line.releases[i], latest = (i === line.releases.length-1);
-            html += '<div class="_ol-rel" data-i="'+i+'" data-l="'+mf.lines.indexOf(line)+'" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid '+_mdcCss('--border')+';border-radius:8px;margin:5px 0;cursor:pointer;transition:.15s">'+
-              '<span style="font-family:Consolas,monospace;font-weight:700;color:'+acc+'">v'+r.fw+'</span>'+
-              '<span style="font-size:11.5px;color:'+_mdcCss('--muted')+'">'+r.date+'</span>'+
-              (latest?'<span style="font-size:11px;color:#5fc178;border:1px solid rgba(58,154,86,.5);border-radius:10px;padding:0 8px">最新</span>':'')+
-              '<span style="flex:1;font-size:12px;color:'+_mdcCss('--muted')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_mdcEsc(r.notes||'')+'</span>'+
+            html += '<div class="_ol-rel" data-i="'+i+'" data-l="'+mf.lines.indexOf(line)+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid '+_mdcCss('--border')+'">'+
+              '<span style="display:inline-flex;flex-shrink:0;color:'+_mdcCss('--muted')+'">'+icoFw+'</span>'+
+              '<span style="font-family:Consolas,monospace;font-weight:700;font-size:13px;color:'+acc+'">v'+r.fw+'</span>'+
+              (latest?'<span style="font-size:10.5px;color:#5fc178;border:1px solid rgba(58,154,86,.5);border-radius:9px;padding:0 7px;line-height:17px">最新</span>':'')+
+              '<span style="flex:1"></span>'+
+              '<span style="font-size:12px;color:'+_mdcCss('--muted')+'">'+_mdcEsc(r.date)+'</span>'+
+              '<button class="_ol-dl" title="下载 v'+r.fw+'" style="padding:3px;border:none;background:transparent;color:'+acc+';cursor:pointer;display:inline-flex">'+icoDl+'</button>'+
               '</div>';
           }
+          html += '</div></div>';
         });
-        html += '</div><div style="font-size:11.5px;color:'+_mdcCss('--muted')+';margin-top:6px">数据来源: '+_mfUrl.replace(/^https?:\/\//,'')+' · 点击版本即下载</div>';
+        html += '</div><div style="font-size:11.5px;color:'+_mdcCss('--muted')+';margin-top:6px">数据来源: '+_mfUrl.replace(/^https?:\/\//,'')+'</div>';
         container.innerHTML = html;
+        Array.prototype.forEach.call(container.querySelectorAll('._ol-grp'), function(grp){
+          grp.querySelector('._ol-hd').onclick = function(){
+            var open = grp.dataset.open === '1';
+            grp.dataset.open = open ? '0' : '1';
+            grp.querySelector('._ol-list').style.display = open ? 'none' : '';
+            grp.querySelector('._ol-arr').style.transform = open ? 'rotate(-90deg)' : 'none';
+          };
+        });
         Array.prototype.forEach.call(container.querySelectorAll('._ol-rel'), function(el){
-          el.onmouseenter = function(){ el.style.borderColor = acc; };
-          el.onmouseleave = function(){ el.style.borderColor = _mdcCss('--border'); };
-          el.onclick = function(){ pick(mf.lines[+el.dataset.l].releases[+el.dataset.i]); };
+          el.querySelector('._ol-dl').onclick = function(){ pick(mf.lines[+el.dataset.l].releases[+el.dataset.i]); };
         });
       }).catch(function(e){ fail(e.message||'网络错误'); });
     }
     run();
-    // 对话框被取消(overlay 移除)时中止
+    // 对话框被取消/被新一次进入取代时中止
     (function watch(){
-      if(!document.getElementById('fw-overlay')||container.dataset.olCancel==='1'){ reject('cancel'); return; }   // 对话框关闭或已被切走 (olCancel 置位) 都中止
+      if(stale()){ reject('cancel'); return; }
       setTimeout(watch, 300);
     })();
   });

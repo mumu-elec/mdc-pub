@@ -1372,8 +1372,19 @@ async function handleFrame(cmd,data){
       let swD=dv.getUint8(7,true),swE=dv.getUint8(8,true);
       updateVerInfo(hwA,hwB,hwC,swD,swE);
     }else{
-      console.warn('Config size mismatch: received '+data.length+' expected '+CONFIG_SIZE+'. Browser cache may be stale - hard refresh (Ctrl+Shift+R) recommended.');
-      document.getElementById('status').textContent='⚠ 参数长度不匹配('+data.length+'≠'+CONFIG_SIZE+') — 请强制刷新页面(Ctrl+Shift+R)';
+      // 协议版本不同 → 固件 sizeof(config_t) 与上位机 CONFIG_SIZE 不一致 (或页面缓存过旧)。
+      // 头部 magic/hw_ver/sw_ver 布局跨协议版本稳定 → 仍解析版本号: 版本行显示设备真实版本
+      // (协议 D 不匹配时红叉 + 触发配套上位机引导); 字段区 offset 不可信, 不应用配置。
+      console.warn('Config size mismatch: received '+data.length+' expected '+CONFIG_SIZE+'.');
+      if(data.length>=10){
+        let dv=new DataView(data.buffer,data.byteOffset,data.byteLength);
+        let hwA=dv.getUint8(4,true),hwB=dv.getUint8(5,true),hwC=dv.getUint8(6,true);
+        let swD=dv.getUint8(7,true),swE=dv.getUint8(8,true);
+        updateVerInfo(hwA,hwB,hwC,swD,swE);
+        document.getElementById('status').textContent='⚠ 配置长度不匹配('+data.length+'B≠上位机'+CONFIG_SIZE+'B) — 协议版本不同或页面过旧, 参数未应用; 请刷新页面或使用配套上位机(见版本行)';
+      }else{
+        document.getElementById('status').textContent='⚠ 参数长度异常('+data.length+'B) — 设备响应无效';
+      }
     }
   }
   if(cmd===0xF0&&data.length>=32){if(rpmEnabled){

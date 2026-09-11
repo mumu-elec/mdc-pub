@@ -26,8 +26,8 @@ html[data-theme="light"]{
   --muted:#64748b;--gold:#b45309;--purple:#7c3aed;--glow:rgba(37,99,235,.08);
   --hair:color-mix(in srgb,var(--border) 72%,transparent);
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{font:15px/1.7 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .25s,color .25s;
+*{margin:0;padding:0;box-sizing:border-box}button,input,select,textarea{font:inherit}
+body{font:15px/1.7 'MiSans','HarmonyOS Sans SC','Source Han Sans SC','Noto Sans SC','PingFang SC','Segoe UI','Microsoft YaHei UI','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .25s,color .25s;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 .wrap{max-width:880px;margin:0 auto;padding:0 20px 56px}
 a{color:var(--accent);text-decoration:none}
@@ -75,8 +75,8 @@ h2 .ic{width:24px;height:24px;transform:translateY(2px)}
 h2 .chip{align-self:center}
 h2 .hi-acc{color:var(--accent)}
 h2 .hi-gold{color:var(--gold)}
-h2 .v{font-family:Consolas,monospace;font-size:24px;font-weight:700;color:var(--text)}
-h2 .date{font-size:13px;color:var(--muted);font-family:Consolas,monospace}
+h2 .v{font-family:'Cascadia Code','Consolas','Courier New',monospace;font-size:24px;font-weight:700;color:var(--text)}
+h2 .date{font-size:13px;color:var(--muted);font-family:'Cascadia Code','Consolas','Courier New',monospace}
 h2 .extras{margin-left:auto;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .hint{margin-top:16px;font-size:13px;color:var(--muted);line-height:1.8}
 .hint b{color:var(--text);font-weight:600}
@@ -91,35 +91,45 @@ h2 .extras{margin-left:auto;display:flex;gap:8px;align-items:baseline;flex-wrap:
 
 /* ---- 统一扁平列表 (文件 / 资料 / 历史版本 同一套视觉) ---- */
 .lb{margin-top:18px}
-.lh{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--muted);margin-bottom:2px}
+.lht{font-size:12.5px;font-weight:600;letter-spacing:.5px;color:var(--text)}
 .lhead,.lr{display:grid;gap:12px;align-items:center;padding:8px 2px;border-bottom:1px solid var(--hair)}
 .lhead{font-size:12px;color:var(--muted);padding:4px 2px;letter-spacing:.3px}
 .lr{transition:background .15s}
 .lr:hover{background:color-mix(in srgb,var(--accent) 4%,transparent)}
 .lr:last-child{border-bottom:none}
-.lg-files{grid-template-columns:24px minmax(0,1.15fr) minmax(0,1.6fr) 92px 40px}
-.lg-res{grid-template-columns:24px minmax(0,1fr) minmax(0,1.9fr) 40px}
+.lg-files{grid-template-columns:minmax(auto,1.15fr) minmax(0,1.6fr) 92px 40px}
+.lg-res{grid-template-columns:minmax(auto,1fr) minmax(0,1.9fr) 40px}
 .lg-hist{grid-template-columns:120px 100px 1fr}
-.fticon{width:15px;height:15px;color:var(--accent)}
-.fn{font-family:Consolas,monospace;font-size:13.5px;color:var(--text);word-break:break-all}
+.fticon{width:15px;height:15px;flex-shrink:0;color:var(--accent)}
+/* 马卡龙色系·加深档 (bin天空蓝/hex抹茶绿/pdf草莓粉/md香芋紫/html马卡龙青/文件夹奶黄) */
+.c-bin{color:#6FA9E2}
+.c-hex{color:#6FC98A}
+.c-pdf{color:#F08CA2}
+.c-md{color:#A98BD6}
+.c-html{color:#5FC4C4}
+.c-dir{color:#E8C964}
+.fn{font-family:'Cascadia Code','Consolas','Courier New',monospace;font-size:13.5px;color:var(--text);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.fn a{display:flex;align-items:center;gap:6px}
 .fn a{color:var(--text)}
 .fn a:hover{color:var(--accent);text-decoration:none}
 .fnote{font-size:12.5px;color:var(--muted)}
-.fdate{font-size:12.5px;color:var(--muted);font-family:Consolas,monospace;white-space:nowrap}
+.fdate{font-size:12.5px;color:var(--muted);font-family:'Cascadia Code','Consolas','Courier New',monospace;white-space:nowrap}
 .c-op{text-align:right}
-.hv{font-family:Consolas,monospace;font-weight:700;font-size:14px;color:var(--accent);display:flex;gap:8px;align-items:center;white-space:nowrap}
+.hv{font-family:'Cascadia Code','Consolas','Courier New',monospace;font-weight:700;font-size:14px;color:var(--accent);display:flex;gap:8px;align-items:center;white-space:nowrap}
 .hv.old{color:var(--muted)}
-.hdate{font-size:13px;color:var(--muted);font-family:Consolas,monospace;white-space:nowrap}
+.hdate{font-size:13px;color:var(--muted);font-family:'Cascadia Code','Consolas','Courier New',monospace;white-space:nowrap}
 .ops{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .ibtn{display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:6px;font-size:12px;
   color:var(--muted);text-decoration:none;flex-shrink:0;transition:.15s}
 .ibtn .ic{width:13px;height:13px}
-.ibtn .lb2{font-size:11.5px;font-family:Consolas,monospace}
+.ibtn .lb2{font-size:11.5px;font-family:'Cascadia Code','Consolas','Courier New',monospace}
 .ibtn:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);text-decoration:none}
 .ibtn.det{color:var(--text)}
 .ibtn.det:hover{color:var(--accent)}
-/* 同一行多个操作按钮之间: 浅灰竖线分隔 */
-.ops .ibtn + .ibtn{border-left:1px solid var(--hair);padding-left:9px}
+/* 同一行多个操作按钮之间: 浅灰竖线分隔 — 独立伪元素悬浮在两钮正中(左右各 6px),
+ * 不再作为按钮 border 贴在盒子上, 悬停高亮底色不会顶到分隔线 */
+.ops .ibtn + .ibtn{position:relative;margin-left:4px}
+.ops .ibtn + .ibtn::before{content:'';position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:1px;height:14px;background:var(--hair)}
 
 .hint{margin-top:16px}
 
@@ -150,7 +160,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
-  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
   <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></symbol>
@@ -158,12 +168,12 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
   <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="10" y="10" width="4" height="4"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
-  <!-- 文件类型: 纸页+折角+扩展名标签 -->
-  <symbol id="i-f-bin" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">BIN</text></symbol>
-  <symbol id="i-f-hex" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">HEX</text></symbol>
-  <symbol id="i-f-html" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.2" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="5.6" fill="currentColor" stroke="none">HTML</text></symbol>
-  <symbol id="i-f-pdf" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">PDF</text></symbol>
-  <symbol id="i-f-md" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="8" fill="currentColor" stroke="none">MD</text></symbol>
+  <!-- 文件类型: 实心纸页+镂空单字母 (fill-rule=evenodd 单路径挖孔, 无 mask/text, 兼容性最好); 颜色由使用处 c-* 马卡龙色类决定 -->
+  <symbol id="i-f-bin" viewBox="0 0 24 24"><path fill-rule="evenodd" fill="currentColor" stroke="none" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8L14 2z M8.6 8 L13.9 8 L15.4 9.5 L15.4 11.6 L14.5 12.5 L15.4 13.4 L15.4 15.5 L13.9 17 L8.6 17 Z M10.3 9.6 L13.7 9.6 L13.7 11.6 L10.3 11.6 Z M10.3 13.4 L13.7 13.4 L13.7 15.4 L10.3 15.4 Z"/></symbol>
+  <symbol id="i-f-hex" viewBox="0 0 24 24"><path fill-rule="evenodd" fill="currentColor" stroke="none" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8L14 2z M8.6 8h1.7v9H8.6z M13.7 8h1.7v9h-1.7z M10.3 11.7h3.4v1.6h-3.4z"/></symbol>
+  <symbol id="i-f-html" viewBox="0 0 24 24"><path fill-rule="evenodd" fill="currentColor" stroke="none" d="M12 2 A10 10 0 0 1 12 22 A10 10 0 0 1 12 2 Z M2.5 11.25 H21.5 V12.75 H2.5 Z M7.5 12 A4.5 10 0 1 1 16.5 12 A4.5 10 0 1 1 7.5 12 Z M9 12 A3 8.5 0 1 1 15 12 A3 8.5 0 1 1 9 12 Z"/></symbol>
+  <symbol id="i-f-pdf" viewBox="0 0 24 24"><path fill-rule="evenodd" fill="currentColor" stroke="none" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8L14 2z M8.6 8 L13.9 8 L15.4 9.5 L15.4 12.6 L13.9 14.1 L10.3 14.1 L10.3 17 L8.6 17 Z M10.3 9.6 L13.7 9.6 L13.7 12.4 L10.3 12.4 Z"/></symbol>
+  <symbol id="i-f-md" viewBox="0 0 24 24"><path fill-rule="evenodd" fill="currentColor" stroke="none" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8L14 2z M8.6 8h1.7v9H8.6z M13.7 8h1.7v9h-1.7z M10.3 8 L13.7 8 L12 12.8 Z"/></symbol>
   <symbol id="i-f-zip" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><text x="11.5" y="17.5" text-anchor="middle" font-family="Consolas,'Courier New',monospace" font-weight="700" font-size="7" fill="currentColor" stroke="none">ZIP</text></symbol>
 </svg>
 
@@ -225,45 +235,44 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
   function baseName(href){
     try{return decodeURIComponent(String(href).split('/').pop());}catch(e){return String(href).split('/').pop();}
   }
-  /* 文件类型图标: 纸页+折角+扩展名标签 (尺寸与正文文字一致); GitHub 树链接(多文件资料)用扁平文件夹 */
+  /* 文件类型图标: 实心纸页+镂空字母 (B/H/P/M, 色类区分); GitHub 树链接(多文件资料)用实心黄文件夹 */
   function ftIcon(href){
     var h=String(href||'').toLowerCase();
-    if(/github\.com\/[^/]+\/[^/]+\/tree\//.test(h))return ic('folder','fticon');
-    if(/\.html?$/.test(h))return ic('f-html','fticon');
-    if(/\.bin$/.test(h))return ic('f-bin','fticon');
-    if(/\.hex$/.test(h))return ic('f-hex','fticon');
-    if(/\.pdf$/.test(h))return ic('f-pdf','fticon');
-    if(/\.md$/.test(h))return ic('f-md','fticon');
+    if(/github\.com\/[^/]+\/[^/]+\/tree\//.test(h))return ic('folder','fticon c-dir');
+    if(/\.html?$/.test(h))return ic('f-html','fticon c-html');
+    if(/\.bin$/.test(h))return ic('f-bin','fticon c-bin');
+    if(/\.hex$/.test(h))return ic('f-hex','fticon c-hex');
+    if(/\.pdf$/.test(h))return ic('f-pdf','fticon c-pdf');
+    if(/\.md$/.test(h))return ic('f-md','fticon c-md');
     if(/\.zip$/.test(h))return ic('f-zip','fticon');
     return ic('file','fticon');
   }
-  /* 统一列表块: 列头 + 数据行 (label 为空则不显示标签行) */
+  /* 统一列表块: 标题并入表头首格(同一行), label 为空则保留默认首列头 */
   function lb(label,labelExtra,headCols,rows){
     var body=Array.isArray(rows)?rows.join(''):rows;
-    var head=(label?'<div class="lh">'+esc(label)+(labelExtra||'')+'</div>':'');
-    return '<div class="lb">'+head+
-      '<div class="lhead '+headCols.g+'">'+headCols.h+'</div>'+body+'</div>';
+    var cells=headCols.c.slice();
+    if(label)cells[0]='<span class="lht">'+esc(label)+(labelExtra||'')+'</span>';
+    return '<div class="lb"><div class="lhead '+headCols.g+'">'+cells.join('')+'</div>'+body+'</div>';
   }
-  var HEAD_FILES={g:'lg-files',h:'<span></span><span>文件</span><span>说明</span><span>发布时间</span><span class="c-op">操作</span>'};
-  var HEAD_RES={g:'lg-res',h:'<span></span><span>文件</span><span>说明</span><span class="c-op">操作</span>'};
-  var HEAD_HIST={g:'lg-hist',h:'<span>版本</span><span>日期</span><span style="text-align:right">操作</span>'};
-  /* 文件行: [类型图标] 文件名 说明 发布时间 [下载] */
+  var HEAD_FILES={g:'lg-files',c:['<span class="lht">文件</span>','<span>说明</span>','<span>发布时间</span>','<span class="c-op">操作</span>']};
+  var HEAD_RES={g:'lg-res',c:['<span>文件</span>','<span>说明</span>','<span class="c-op">操作</span>']};
+  var HEAD_HIST={g:'lg-hist',c:['<span>版本</span>','<span>日期</span>','<span style="text-align:right">操作</span>']};
+  /* 文件行: 文件名(含类型图标) 说明 发布时间 [下载] */
   function frow(href,note,date){
     if(!href)return '';
     var nm=baseName(href);
-    return '<div class="lr lg-files">'+ftIcon(href)+
-      '<span class="fn"><a href="'+esc(href)+'" download title="下载 '+esc(nm)+'">'+esc(nm)+'</a></span>'+
+    return '<div class="lr lg-files">'+
+      '<span class="fn"><a href="'+esc(href)+'" download title="下载 '+esc(nm)+'">'+ftIcon(href)+esc(nm)+'</a></span>'+
       '<span class="fnote">'+(note?esc(note):'')+'</span>'+
       '<span class="fdate">'+dateOrDash(date)+'</span>'+
       '<span class="c-op"><a class="ibtn" href="'+esc(href)+'" download title="下载 '+esc(nm)+'">'+ic('download')+'</a></span>'+
       '</div>';
   }
-  /* 资料行 (无日期列): 名称用 json 的 name; 外链(GitHub)用跳转按钮新开标签, 站内文件用下载按钮 */
+  /* 资料行 (无日期列): 名称用 json 的 name (有拓展名的显示拓展名); 外链(GitHub)用跳转按钮新开标签, 站内文件用下载按钮 */
   function rrow(r){
     var ext=!!(r.href&&/^https?:/i.test(r.href));
     return '<div class="lr lg-res">'+
-      (r.href?ftIcon(r.href):ic('file','fticon'))+
-      '<span class="fn">'+(r.href?'<a href="'+esc(r.href)+'"'+(ext?' target="_blank" rel="noopener"':'')+' title="'+esc((ext?'前往 ':'打开 ')+r.name)+'">'+esc(r.name)+'</a>':esc(r.name))+'</span>'+
+      '<span class="fn">'+(r.href?'<a href="'+esc(r.href)+'"'+(ext?' target="_blank" rel="noopener"':'')+' title="'+esc((ext?'前往 ':'打开 ')+r.name)+'">'+ftIcon(r.href)+esc(r.name)+'</a>':ftIcon('')+esc(r.name))+'</span>'+
       '<span class="fnote">'+(r.note?esc(r.note):'')+'</span>'+
       '<span class="c-op">'+(r.href?(ext?'<a class="ibtn" href="'+esc(r.href)+'" target="_blank" rel="noopener" title="前往 '+esc(r.name)+'（GitHub）">'+ic('ext')+'</a>'
                                       :'<a class="ibtn" href="'+esc(r.href)+'" download title="下载 '+esc(r.name)+'">'+ic('download')+'</a>'):'')+'</span>'+
