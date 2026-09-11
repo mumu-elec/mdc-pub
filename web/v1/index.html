@@ -3946,9 +3946,9 @@ function mdcCheckHostUpdate(){
 
 // ====== 3. 配套上位机引导 (config.js updateVerInfo 协议不匹配钩子调用) ======
 // devD: 设备固件上报的协议版本 (swD)。每会话每个 D 值只弹一次。
-// 扁平简约: 标题 + 一句话说明 (含当前/目标版本) + 两行按钮 —
-//   行1: 下载在线 / 下载离线 (无边框文字按钮, 发布页 .btn 图标+文字同款);
-//   行2: 跳转 (accent 实底主按钮, 跳转前关闭当前串口连接释放给新页面) / 取消。
+// 方案 A 居中极简: 居中警告图标 + 标题 + 「当前 → 配套」版本胶囊对比 + 一句话说明;
+//   行1: 下载按钮带目标版本号 (上位机vX.Y / 上位机vX.Y-离线版, 无边框灰字小按钮);
+//   行2: 跳转 (accent 实底小主按钮, 跳转前关闭当前串口连接释放给新页面) / 取消。
 function mdcSuggestHostForProtocol(devD){
   if(_suggestedD[devD]) return;
   _suggestedD[devD] = true;
@@ -3972,20 +3972,30 @@ function mdcSuggestHostForProtocol(devD){
     ov.id = 'ol-sg';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;display:flex;align-items:center;justify-content:center';
     // 扁平线性图标 (24 viewBox / stroke 2, 与全站及发布页 svg.ic 同风格)
-    var warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;display:block"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+    var warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;display:block"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
     var icoDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
     var icoGo = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
     var btn = 'display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:6px 10px;border:none;border-radius:6px;background:transparent;font-size:13px;font-weight:600;cursor:pointer';
+    var cap = 'font-family:Consolas,monospace;font-size:19px;font-weight:700;border-radius:8px;padding:4px 14px';
+    var arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;color:var(--muted)"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
     ov.innerHTML =
-      '<div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px 24px 16px;width:min(400px,90vw);box-shadow:0 12px 36px rgba(0,0,0,.28)">'+
-        '<div style="display:flex;align-items:center;gap:8px;color:var(--red);font-size:15px;font-weight:700">'+warn+'协议版本不匹配</div>'+
-        '<div style="margin:12px 0 14px;font-size:13.5px;line-height:1.7;color:var(--text)">当前上位机 <b>v'+HOST_VER.B+'.'+HOST_VER.C+'</b> 与设备固件协议不匹配，是否跳转到配套上位机 <b>v'+h.ver+'</b>？</div>'+
-        '<div style="display:flex;justify-content:flex-end;gap:2px">'+
-          (h.online?'<button id="ol-sg-on" class="sg-act" style="'+btn+'">'+icoDl+'下载联网</button>':'')+
-          (h.offline?'<button id="ol-sg-off" class="sg-act" style="'+btn+'">'+icoDl+'下载离线</button>':'')+
+      '<div style="background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:26px 28px 20px;width:min(360px,90vw);text-align:center;box-shadow:0 12px 36px rgba(0,0,0,.28)">'+
+        '<div style="display:flex;justify-content:center;color:var(--red);margin-bottom:10px">'+warn+'</div>'+
+        '<div style="font-size:15px;font-weight:700;color:var(--text)">协议版本不匹配</div>'+
+        '<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:18px 0 6px">'+
+          '<div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">当前上位机</div>'+
+          '<div class="mono" style="'+cap+';color:var(--text);background:color-mix(in srgb,var(--muted) 10%,transparent)">v'+HOST_VER.B+'.'+HOST_VER.C+'</div></div>'+
+          arrow+
+          '<div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">配套上位机</div>'+
+          '<div class="mono" style="'+cap+';color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)">v'+h.ver+'</div></div>'+
         '</div>'+
-        '<div style="display:flex;justify-content:flex-end;gap:2px;margin-top:2px">'+
-          (h.web?'<button id="ol-sg-web" class="sg-main" style="'+btn+'">'+icoGo+'跳转到 v'+h.ver+'</button>':'')+
+        '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:16px">设备固件协议与当前上位机不匹配<br>是否跳转到配套版本？</div>'+
+        '<div style="display:flex;justify-content:center;gap:2px">'+
+          (h.online?'<button id="ol-sg-on" class="sg-act" style="'+btn+'">'+icoDl+'上位机v'+h.ver+'</button>':'')+
+          (h.offline?'<button id="ol-sg-off" class="sg-act" style="'+btn+'">'+icoDl+'上位机v'+h.ver+'-离线版</button>':'')+
+        '</div>'+
+        '<div style="display:flex;justify-content:center;gap:8px;align-items:center;margin-top:8px">'+
+          (h.web?'<button id="ol-sg-web" class="sg-main" style="'+btn+';padding:7px 16px;background:var(--accent-solid);color:#fff">'+icoGo+'跳转</button>':'')+
           '<button id="ol-sg-no" class="sg-act" style="'+btn+'">取消</button>'+
         '</div>'+
       '</div>';
@@ -4008,8 +4018,8 @@ function mdcSuggestHostForProtocol(devD){
       try{ if(typeof disconnectSerial === 'function') await disconnectSerial(); }catch(e){}
       window.open(_mfcAbs(h.web), '_blank'); close();
     };
-    dl(ov.querySelector('#ol-sg-on'), h.online, icoDl+'下载在线');
-    dl(ov.querySelector('#ol-sg-off'), h.offline, icoDl+'下载离线');
+    dl(ov.querySelector('#ol-sg-on'), h.online, icoDl+'上位机v'+h.ver);
+    dl(ov.querySelector('#ol-sg-off'), h.offline, icoDl+'上位机v'+h.ver+'-离线版');
     ov.querySelector('#ol-sg-no').onclick = close;
   }).catch(function(){ /* 断网静默: 版本行红叉本身仍在 */ });
 }
