@@ -16,6 +16,7 @@
       "current": true,
       "resources": [
         { "name": "技术手册 v2.0（当前版）", "href": "docs/technical-manual.md", "note": "硬件规格 / 接线 / 通信协议 / 底盘功能 / 固件升级 / 故障排查；v2.0 发布快照见 docs/v2/2.0/" },
+        { "name": "技术手册 v2.0 PDF", "href": "docs/v2/2.0/MDC技术手册-v2.0.pdf", "note": "v2.0 随线发布 PDF 版" },
         { "name": "例程包 v2.0", "href": "docs/v2/2.0/mdc_examples_v2.0.zip", "note": "Python×6 + Arduino×1，248B 协议口径（D=2），字节级自测通过" },
         { "name": "例程库 mdc_lib（248B 对齐版整理中）", "href": "mdc_lib/README.md", "note": "12 平台通用调用库；当前按 231B 旧布局（v1 线协议）编写，对齐 v2 线 248B 前，v2 线配置读写请用例程包 v2.0" },
         { "name": "通信协议规范（231B 旧口径）", "href": "mdc_lib/协议规范.md", "note": "v2 线协议权威版本以技术手册 v2.0 §5 为准（248B）；本规范待对齐后更新" }
@@ -47,6 +48,7 @@
           ],
           "resources": [
             { "name": "技术手册 v2.0（本版随发）", "href": "docs/v2/2.0/technical-manual.md", "note": "v2.0 发布快照，永不覆盖" },
+            { "name": "技术手册 v2.0 PDF", "href": "docs/v2/2.0/MDC技术手册-v2.0.pdf", "note": "v2.0 随线发布 PDF 版" },
             { "name": "例程包 v2.0", "href": "docs/v2/2.0/mdc_examples_v2.0.zip", "note": "Python×6 + Arduino×1（248B 协议口径）" }
           ],
           "host": {

@@ -51,7 +51,7 @@
 | 主固件 | v1.2.0 | `release/motor_driver_ctrl-v1.2.0.bin` / `.hex`（底盘 / 单电机一体，协议 D=2） |
 | v1 存档固件 | v1.1.0 / v1.1.1 / v1.1.2 | `release/motor_driver_ctrl-v1.1.*.bin` / `.hex`（协议 D=1，配上位机 v1.x） |
 | Bootloader | v1.0 | `release/bootloader-v1.0.bin` |
-| 技术手册 | v2.0 / v1.2 存档 | 当前版 `docs/technical-manual.md`；发布快照 `docs/v2/2.0/`（手册+配图）、`docs/v1/1.2/`（手册+配图+PDF，永不覆盖） |
+| 技术手册 | v2.0 / v1.2 存档 | 当前版 `docs/technical-manual.md`；发布快照 `docs/v2/2.0/`（手册+配图+PDF）、`docs/v1/1.2/`（手册+配图+PDF，永不覆盖） |
 | 例程 | 例程包 v2.0 / mdc_lib | `docs/v2/2.0/mdc_examples_v2.0.zip`（248B 协议口径，随 v1.2.0 首发）/ `mdc_lib/`（12 平台库；当前按 231B 旧布局编写，248B 对齐版整理中） |
 
 > 版本规则：固件 vA.D.E（A=硬件 D=协议 E=补丁）· 上位机 vD.F（D=协议 F=修复）。上位机与固件的协议版本 D 必须一致；不匹配时联网版上位机会自动引导切换到配套版本。
