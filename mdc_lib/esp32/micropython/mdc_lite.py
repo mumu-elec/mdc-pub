@@ -33,7 +33,7 @@ mdc_lite.py — 极简调用库（只管调用 / send-only，完全独立实现�
 
 # ---- 常量 ----
 MD_SYNC = 0xAA            # 帧同步字
-MD_MAX_DATA = 250         # DATA 段最大长度
+MD_MAX_DATA = 248         # DATA 段最大长度
 MD_CRC8_POLY = 0x07       # CRC8 多项式（初值 0）
 MD_CMD_MOTOR_CTRL = 0x31  # 四通道控制
 MD_CMD_SUBSCRIBE = 0x40   # 订阅状态上报

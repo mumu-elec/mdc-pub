@@ -111,13 +111,15 @@ h2 .extras{margin-left:auto;display:flex;gap:8px;align-items:baseline;flex-wrap:
 .hv.old{color:var(--muted)}
 .hdate{font-size:13px;color:var(--muted);font-family:Consolas,monospace;white-space:nowrap}
 .ops{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.ibtn{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;font-size:12px;
-  color:var(--muted);border:1px solid var(--hair);text-decoration:none;flex-shrink:0;transition:.15s}
+.ibtn{display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:6px;font-size:12px;
+  color:var(--muted);text-decoration:none;flex-shrink:0;transition:.15s}
 .ibtn .ic{width:13px;height:13px}
 .ibtn .lb2{font-size:11.5px;font-family:Consolas,monospace}
-.ibtn:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 7%,transparent);text-decoration:none}
+.ibtn:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent);text-decoration:none}
 .ibtn.det{color:var(--text)}
 .ibtn.det:hover{color:var(--accent)}
+/* 同一行多个操作按钮之间: 浅灰竖线分隔 */
+.ops .ibtn + .ibtn{border-left:1px solid var(--hair);padding-left:9px}
 
 .hint{margin-top:16px}
 
@@ -148,6 +150,8 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
   <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></symbol>
   <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
@@ -221,9 +225,10 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
   function baseName(href){
     try{return decodeURIComponent(String(href).split('/').pop());}catch(e){return String(href).split('/').pop();}
   }
-  /* 文件类型图标: 纸页+折角+扩展名标签 (尺寸与正文文字一致) */
+  /* 文件类型图标: 纸页+折角+扩展名标签 (尺寸与正文文字一致); GitHub 树链接(多文件资料)用扁平文件夹 */
   function ftIcon(href){
     var h=String(href||'').toLowerCase();
+    if(/github\.com\/[^/]+\/[^/]+\/tree\//.test(h))return ic('folder','fticon');
     if(/\.html?$/.test(h))return ic('f-html','fticon');
     if(/\.bin$/.test(h))return ic('f-bin','fticon');
     if(/\.hex$/.test(h))return ic('f-hex','fticon');
@@ -253,13 +258,15 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
       '<span class="c-op"><a class="ibtn" href="'+esc(href)+'" download title="下载 '+esc(nm)+'">'+ic('download')+'</a></span>'+
       '</div>';
   }
-  /* 资料行 (无日期列): 名称用 json 的 name */
+  /* 资料行 (无日期列): 名称用 json 的 name; 外链(GitHub)用跳转按钮新开标签, 站内文件用下载按钮 */
   function rrow(r){
+    var ext=!!(r.href&&/^https?:/i.test(r.href));
     return '<div class="lr lg-res">'+
       (r.href?ftIcon(r.href):ic('file','fticon'))+
-      '<span class="fn">'+(r.href?'<a href="'+esc(r.href)+'" title="打开 '+esc(r.name)+'">'+esc(r.name)+'</a>':esc(r.name))+'</span>'+
+      '<span class="fn">'+(r.href?'<a href="'+esc(r.href)+'"'+(ext?' target="_blank" rel="noopener"':'')+' title="'+esc((ext?'前往 ':'打开 ')+r.name)+'">'+esc(r.name)+'</a>':esc(r.name))+'</span>'+
       '<span class="fnote">'+(r.note?esc(r.note):'')+'</span>'+
-      '<span class="c-op">'+(r.href?'<a class="ibtn" href="'+esc(r.href)+'" download title="下载 '+esc(r.name)+'">'+ic('download')+'</a>':'')+'</span>'+
+      '<span class="c-op">'+(r.href?(ext?'<a class="ibtn" href="'+esc(r.href)+'" target="_blank" rel="noopener" title="前往 '+esc(r.name)+'（GitHub）">'+ic('ext')+'</a>'
+                                      :'<a class="ibtn" href="'+esc(r.href)+'" download title="下载 '+esc(r.name)+'">'+ic('download')+'</a>'):'')+'</span>'+
       '</div>';
   }
   /* 历史行操作按钮: 下载图标 + 微标签 */
@@ -275,7 +282,8 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
     for(var i=hrs.length-1;i>=0;i--){
       var h=hrs[i];
       rows.push({v:'v'+h.ver,d:h.date,cur:withCur&&i===hrs.length-1,old:old,title:h.notes,
-        ops:ibtn(h.offline,'离线','下载离线版')+ibtn(h.online,'联网','下载联网版')});
+        ops:(h.detail?'<a class="ibtn det" href="'+esc(h.detail)+'" title="查看发布详情">详细</a>':'')+
+            ibtn(h.offline,'离线','下载离线版')+ibtn(h.online,'联网','下载联网版')});
     }
     return rows;
   }
@@ -324,7 +332,7 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
     return out+'</section>';
   }
 
-  /* ====== 固件区块 (当前版 + 存档资料并入相关资料) ====== */
+  /* ====== 固件区块 (相关资料仅当前线; 存档线资料只经各版本详情页呈现) ====== */
   function fwSection(line,arch){
     var rels=line.releases||[];
     var cur=rels.length?rels[rels.length-1]:null;
@@ -341,7 +349,6 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding-top:16px}
       frow(cur.fw_hex,'HEX 格式（烧录器直刷）',cur.date)
     ]);
     var rs=(line.resources||[]).slice();
-    arch.forEach(function(l){rs=rs.concat(l.resources||[]);});
     if(rs.length){
       out+=lb('相关资料',null,HEAD_RES,rs.map(rrow));
     }

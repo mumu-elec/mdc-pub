@@ -3,7 +3,7 @@
 ## 功能
 - **mdc_lib 二进制 API 调用指南**：完整演示「打包 → 发送 → 收帧 → 解析」调用链路
 - **PING（0x01）**：`md_bin_ping()` 打包帧发送 → `MDParser` 逐字节收帧 → `md_parse_ack()` 校验 ACK，确认设备在线
-- **READ_PARAM（0x10）**：`md_bin_read_param()` 打包帧发送 → 收 231B config_t 应答 → `md_parse_config()` 解析全字段，打印版本与关键配置
+- **READ_PARAM（0x10）**：`md_bin_read_param()` 打包帧发送 → 收 248B config_t 应答 → `md_parse_config()` 解析全字段，打印版本与关键配置
 - 所有协议打包/解析均由 **mdc_lib** 完成；例程只负责 UART 收发
 
 ## 硬件接线（ESP32 UART2 ↔ 控制板 RC 口）
@@ -47,10 +47,10 @@
 | API | 说明 |
 |-----|------|
 | `md_bin_ping()` | 打包 0x01 PING 帧（`b"\xAA\x01\x00\x15"`），无 DATA |
-| `md_bin_read_param()` | 打包 0x10 READ_PARAM 帧，应答为 231B config_t |
+| `md_bin_read_param()` | 打包 0x10 READ_PARAM 帧，应答为 248B config_t |
 | `MDParser.feed(byte)` | 流式解析：逐字节喂入，完整帧返回 `(cmd, payload)`，否则 `None`；自动找 `0xAA` 同步 + CRC8 校验 |
 | `md_parse_ack(payload)` | 解析 ACK 的 1B DATA（err），`err=0x00` 成功 |
-| `md_parse_config(payload)` | 解析 231B config_t → dict（全字段，含位域与浮点），键名见 mdc_lib API 文档 §6.5 |
+| `md_parse_config(payload)` | 解析 248B config_t → dict（全字段，含位域与浮点），键名见 mdc_lib API 文档 §6.5 |
 | `MD_CMD_PING` / `MD_CMD_READ_PARAM` / `MD_CONFIG_SIZE` 等 | 命令字与尺寸常量 |
 
 实际调用示例（节选自 `main.py`）：
@@ -66,9 +66,9 @@ r = wait_frame(parser, 500)          # 读 UART 字节喂 parser，返回 (cmd, 
 cmd, payload = r                     # payload = b"\x00"（1B err）
 ack = mdc_lib.md_parse_ack(payload)  # ack.err == 0x00 成功
 
-# ② READ_PARAM：打包 -> 发送 -> 收 231B -> md_parse_config 解析
+# ② READ_PARAM：打包 -> 发送 -> 收 248B -> md_parse_config 解析
 uart.write(mdc_lib.md_bin_read_param())
-cmd, payload = wait_frame(parser, 1500)   # payload 为 231B config_t
+cmd, payload = wait_frame(parser, 1500)   # payload 为 248B config_t
 cfg = mdc_lib.md_parse_config(payload)    # dict
 print(cfg["baud_rate"], cfg["control_mode"], cfg["encoder_cpr"])
 ```
@@ -110,6 +110,6 @@ mpremote connect COM5 reset
 |------|------|
 | PING 超时（None） | 检查接线 / 共地；确认已发 `/uart2 115200 0 uart`；确认波特率一致 |
 | CRC 校验失败 | CRC8 计算范围是 CMD+LEN+DATA（**不含 SYNC**），多项式 0x07 初值 0；`MDParser` 会自动跳过坏帧 |
-| READ_PARAM 收不完整 | `RXBUF` 需 ≥ 235B（默认 1024，一般无需改） |
-| 收到"应答异常" | 帧 cmd 不是 0x10 或 payload 不是 231B：确认固件协议版本 D=2（布局 v2.1） |
+| READ_PARAM 收不完整 | `RXBUF` 需 ≥ 252B（默认 1024，一般无需改） |
+| 收到"应答异常" | 帧 cmd 不是 0x10 或 payload 不是 248B：确认固件协议版本 D=2（布局 v2.x） |
 | magic 与预期不符 | 固件 SW_MAJOR 需与协议版本 D 一致，否则协议不兼容 |

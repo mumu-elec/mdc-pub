@@ -23,8 +23,8 @@
 |-----------|------|------|
 | `/motor_cmd` | `ros1_motor_driver/MotorCmd` | 订阅：四通道目标值 `int32[4] target`。含义随各通道控制模式：开环=PWM±1000 / 速度=RPM / 位置=0.1° |
 | `/motor_status` | `ros1_motor_driver/MotorStatus` | 发布：`enc[4]` 编码器累计脉冲、`tgt[4]` 当前目标、`rpm[4]` 滤波后转速、`sbus_frame_cnt` / `sbus_ok_cnt`（含 `std_msgs/Header`） |
-| `/get_config` | `ros1_motor_driver/GetConfig` | 服务：空请求 → 响应 `uint8[231] config`（config_t 全量 231B，小端） |
-| `/set_config` | `ros1_motor_driver/SetConfig` | 服务：请求 `uint8[231] config` → 响应 `bool success`（仅 RAM，受保护字段自动还原） |
+| `/get_config` | `ros1_motor_driver/GetConfig` | 服务：空请求 → 响应 `uint8[248] config`（config_t 全量 248B，小端） |
+| `/set_config` | `ros1_motor_driver/SetConfig` | 服务：请求 `uint8[248] config` → 响应 `bool success`（仅 RAM，受保护字段自动还原） |
 | `/save_config` | `ros1_motor_driver/SaveConfig` | 服务：空请求 → 响应 `bool success`（RAM 配置写入 EEPROM，约 190ms） |
 
 ## 依赖与 mdc_lib
@@ -45,11 +45,11 @@
 | `mdc::bin_subscribe(interval_ms)` | 打包 0x40 SUBSCRIBE 帧，开启状态周期上报 |
 | `mdc::bin_unsubscribe()` | 打包 0x41 UNSUBSCRIBE 帧，关闭状态上报 |
 | `mdc::bin_motor_ctrl(t0, t1, t2, t3)` | 打包 0x31 MOTOR_CTRL 控制帧（4×int32 LE） |
-| `mdc::bin_read_param()` | 打包 0x10 READ_PARAM 帧，读取 config_t 231B |
-| `mdc::bin_write_param(config)` | 打包 0x11 WRITE_PARAM 帧（config_t 231B） |
+| `mdc::bin_read_param()` | 打包 0x10 READ_PARAM 帧，读取 config_t 248B |
+| `mdc::bin_write_param(config)` | 打包 0x11 WRITE_PARAM 帧（config_t 248B） |
 | `mdc::bin_save()` | 打包 0x20 SAVE_EEPROM 帧，RAM 配置写入 EEPROM |
-| `mdc::parse_config(raw, cfg)` | 解析 231B config_t → `mdc::Config`（服务中校验/摘要） |
-| `mdc::pack_config(cfg)` | `mdc::Config` → 231B config_t（受保护区 offset 0~10 置 0，设备写入时自动还原） |
+| `mdc::parse_config(raw, cfg)` | 解析 248B config_t → `mdc::Config`（服务中校验/摘要） |
+| `mdc::pack_config(cfg)` | `mdc::Config` → 248B config_t（受保护区 offset 0~10 置 0，设备写入时自动还原） |
 | `mdc::Parser::feed(bytes, len)` | 流式解析：批量喂入字节，自动找 0xAA 同步 + CRC8 校验，文本噪声自动丢弃 |
 | `mdc::parse_status(payload, st)` | 解析 0xF0 状态帧 → `mdc::Status`（56B / 72B 自动兼容） |
 | `mdc::parse_ack(payload, ack)` | 解析 ACK 帧 DATA 段（1 字节 err，`err=0` 成功） |
@@ -167,7 +167,7 @@ ros1_motor_driver/
 │   ├── MotorCmd.msg          # 四通道目标值
 │   └── MotorStatus.msg       # 状态上报
 ├── srv/
-│   ├── GetConfig.srv         # 读 config_t (231B)
+│   ├── GetConfig.srv         # 读 config_t (248B)
 │   ├── SetConfig.srv         # 写 config_t
 │   └── SaveConfig.srv        # 保存 EEPROM
 ├── src/
@@ -188,6 +188,6 @@ ros1_motor_driver/
 | 控制帧无效/电机不动 | 确认日志中 `/priority 1` 回显成功（USB 主控）；检查 `/timeout` 未超时归零；协议识别（/detect）期间控制帧被拒绝，稍等重试 |
 | `/motor_status` 无输出 | 确认 SUBSCRIBE 成功日志；`rostopic list` 查看话题是否注册；检查 `status_interval_ms` ≥ 20 |
 | 发布 /motor_cmd 被限流 | 驱动节点按 30Hz 限流发送，日志有提示；建议发布频率 10~30Hz |
-| 解析不到帧/状态异常 | 0xAA 同步、CRC8 校验与 56B/72B 状态解析已全部由 mdc_lib 内部完成，无需手动处理；确认 mdc_lib 与设备固件协议版本一致（布局 v2.1） |
+| 解析不到帧/状态异常 | 0xAA 同步、CRC8 校验与 56B/72B 状态解析已全部由 mdc_lib 内部完成，无需手动处理；确认 mdc_lib 与设备固件协议版本一致（布局 v2.x） |
 | 编译找不到 mdc_lib.hpp | 确认 CMakeLists.txt 的 include 路径；独立使用时按「依赖与 mdc_lib」章节把 mdc_lib.hpp 复制到包内 include/ |
-| 版本不匹配 | 设备固件协议版本 D 必须与 mdc_lib 的协议版本（布局 v2.1）一致 |
+| 版本不匹配 | 设备固件协议版本 D 必须与 mdc_lib 的协议版本（布局 v2.x）一致 |

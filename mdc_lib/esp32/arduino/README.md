@@ -1,13 +1,13 @@
 # mdc_lib — ESP32（Arduino）接入文档
 
 > 平台：ESP32（Arduino core）｜ 文件：`mdc_lib.h` + `mdc_lib.cpp` + `README.md`
-> 协议依据：[`../../协议规范.md`](../../协议规范.md)（布局 v2.1，config_t = 231B，固件 SW_MAJOR=2）
+> 协议依据：[`../../协议规范.md`](../../协议规范.md)（布局 v2.x，config_t = 248B，固件 SW_MAJOR=2）
 > API 规范：[`../API.md`](../../API.md)（唯一依据，同一套 `md_*` 签名）
 
 ## 一、功能
 
 - **纯 C++ 打包/解析库**：不 include `Arduino.h` / ESP 头文件，与框架无关（本机 g++ `-std=c++17 -Wall -Wextra` 可直接编译校验）。
-- **打包**：`md_bin_*`（15 个二进制命令，返回整帧字节）、`md_text_*`（文本指令，返回含 `\n` 的行）。
+- **打包**：`md_bin_*`（16 个二进制命令，返回整帧字节）、`md_text_*`（文本指令，返回含 `\n` 的行）。
 - **解析**：`md_parse_*`（ACK / STATUS / DETECT / SBUS / config）+ 流式解析器 `md_parser_feed`（自动找 `0xAA` 同步 + CRC 校验）。
 - **不碰串口**：串口收发由用户实现 —— 拿库返回的字节 `Serial2.write(buf, n)` 发送；收到的字节喂给 `md_parser_feed`。
 
@@ -38,8 +38,8 @@ md_text_build("/speedctrl", "1 0.5 0.02 0.01 500 800 10 0", out, cap);
 md_text_build("/uart2",     "115200 0 uart", out, cap);
 ```
 
-### 二进制命令（15 个，返回整帧字节）
-`md_bin_ping / read_param / write_param(cfg) / write_field / save / load / factory_reset / motor_raw(ch,dir,pwm) / motor_ctrl(t0,t1,t2,t3) / subscribe(ms) / unsubscribe / debug_sbus / debug_speed / enter_bl / reboot`，签名统一为 `uint16_t md_xxx(..., uint8_t* out, uint16_t cap)`。
+### 二进制命令（16 个，返回整帧字节）
+`md_bin_ping / read_param / write_param(cfg) / write_field / save / load / factory_reset / motor_raw(ch,dir,pwm) / motor_ctrl(t0,t1,t2,t3) / motor_jog(ch,rpm) / subscribe(ms) / unsubscribe / debug_sbus / debug_speed / enter_bl / reboot`，签名统一为 `uint16_t md_xxx(..., uint8_t* out, uint16_t cap)`。
 
 ### 解析（5 个）
 `md_parse_ack(payload, len, &ack)`、`md_parse_status(payload, len, &st)`（56B/72B 自动兼容）、`md_parse_detect(payload, len, &dt)`、`md_parse_sbus(payload, len, ch[16])`、`md_parse_config(raw, len, &cfg)` + `md_pack_config(&cfg, out, cap)`（往返无损）。

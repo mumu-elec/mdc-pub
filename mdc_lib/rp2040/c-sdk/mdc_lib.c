@@ -2,7 +2,7 @@
  * @file    mdc_lib.c
  * @brief   Motor Driver Controller 通用调用库 —— 纯 C 实现（平台无关核心）
  *
- * 协议依据：协议规范.md（布局 v2.1，config_t = 231B）
+ * 协议依据：协议规范.md（布局 v2.x，config_t = 248B）
  * API 规范：../mdc_lib/API.md（统一 md_* 签名）
  *
  * 本文件不 include 任何硬件库头文件（HAL / pico_sdk / ESP-IDF 均不依赖），
@@ -342,7 +342,7 @@ uint16_t md_text_mode(uint8_t ch, const char* mode, char* out, uint16_t cap)
     return md_text_build("/mode", args, out, cap);
 }
 
-/* ==================== 二进制命令层（15 个打包函数） ==================== */
+/* ==================== 二进制命令层（16 个打包函数） ==================== */
 
 uint16_t md_bin_ping(uint8_t* out, uint16_t cap)
 {
@@ -376,7 +376,7 @@ uint16_t md_bin_write_field(uint16_t field_id, const uint8_t* value,
 
     if (value_len > (uint16_t)(MD_MAX_DATA - 2))   /* 2B field_id + value */
         return 0;
-    if (field_id < 12)                             /* 受保护区（offset<12）不可写入 */
+    if (field_id < 11)                             /* 受保护区（offset<11）不可写入（固件返回 ACK 0x02） */
         return 0;
     if (out == 0)
         return 0;
@@ -447,6 +447,23 @@ uint16_t md_bin_motor_ctrl(int32_t t0, int32_t t1, int32_t t2, int32_t t3,
     md_put_u32(out + 15, (uint32_t)t3);
     out[19] = md_crc8(out + 1, 18);
     return 20;
+}
+
+uint16_t md_bin_motor_jog(uint8_t ch, int16_t rpm, uint8_t* out, uint16_t cap)
+{
+    if (out == 0 || cap < 7)
+        return 0;
+    if (ch > 3)
+        return 0;
+
+    out[0] = MD_SYNC;
+    out[1] = MD_CMD_MOTOR_JOG;
+    out[2] = 3;
+    out[3] = ch;
+    out[4] = (uint8_t)((uint16_t)rpm & 0xFF);          /* int16 LE，有符号 */
+    out[5] = (uint8_t)(((uint16_t)rpm >> 8) & 0xFF);
+    out[6] = md_crc8(out + 1, 5);
+    return 7;
 }
 
 uint16_t md_bin_subscribe(uint16_t interval_ms, uint8_t* out, uint16_t cap)
@@ -614,47 +631,61 @@ int md_parse_config(const uint8_t* raw, uint16_t len, md_config_t* out)
     for (i = 0; i < 4; i++)
         out->encoder_cpr[i] = md_get_u16(raw + 20 + i * 2);
     for (i = 0; i < 4; i++)
-        out->speed_period_ms[i] = md_get_u16(raw + 28 + i * 2);
+        out->speed_period_ms[i] = raw[28 + i];
     for (i = 0; i < 4; i++)
-        out->speed_pid_type[i] = (uint8_t)((md_get_u16(raw + 36) >> (i * 4)) & 0x0F);
+        out->speed_pid_type[i] = (uint8_t)((md_get_u16(raw + 32) >> (i * 4)) & 0x0F);
     for (i = 0; i < 4; i++)
-        out->speed_olim[i] = md_get_u16(raw + 38 + i * 2);
+        out->speed_olim[i] = md_get_u16(raw + 34 + i * 2);
     for (i = 0; i < 4; i++) {
-        out->speed_kp[i]   = md_get_f32(raw + 46 + i * 16 + 0);
-        out->speed_ki[i]   = md_get_f32(raw + 46 + i * 16 + 4);
-        out->speed_kd[i]   = md_get_f32(raw + 46 + i * 16 + 8);
-        out->speed_ilim[i] = md_get_f32(raw + 46 + i * 16 + 12);
+        out->speed_kp[i]   = md_get_f32(raw + 42 + i * 16 + 0);
+        out->speed_ki[i]   = md_get_f32(raw + 42 + i * 16 + 4);
+        out->speed_kd[i]   = md_get_f32(raw + 42 + i * 16 + 8);
+        out->speed_ilim[i] = md_get_f32(raw + 42 + i * 16 + 12);
     }
     for (i = 0; i < 4; i++)
-        out->pos_period_ms[i] = md_get_u16(raw + 110 + i * 2);
+        out->pos_period_ms[i] = raw[106 + i];
     for (i = 0; i < 4; i++)
-        out->pos_pid_type[i] = (uint8_t)((md_get_u16(raw + 118) >> (i * 4)) & 0x0F);
+        out->pos_pid_type[i] = (uint8_t)((md_get_u16(raw + 110) >> (i * 4)) & 0x0F);
     for (i = 0; i < 4; i++) {
-        out->pos_kp[i]   = md_get_f32(raw + 120 + i * 16 + 0);
-        out->pos_ki[i]   = md_get_f32(raw + 120 + i * 16 + 4);
-        out->pos_kd[i]   = md_get_f32(raw + 120 + i * 16 + 8);
-        out->pos_ilim[i] = md_get_f32(raw + 120 + i * 16 + 12);
+        out->pos_kp[i]   = md_get_f32(raw + 112 + i * 16 + 0);
+        out->pos_ki[i]   = md_get_f32(raw + 112 + i * 16 + 4);
+        out->pos_kd[i]   = md_get_f32(raw + 112 + i * 16 + 8);
+        out->pos_ilim[i] = md_get_f32(raw + 112 + i * 16 + 12);
     }
     for (i = 0; i < 4; i++)
-        out->pos_olim[i] = md_get_f32(raw + 184 + i * 4);
+        out->pos_olim[i] = md_get_f32(raw + 176 + i * 4);
     for (i = 0; i < 4; i++)
-        out->pos_angle_cpr[i] = md_get_u16(raw + 200 + i * 2);
+        out->pos_angle_cpr[i] = md_get_u16(raw + 192 + i * 2);
     for (i = 0; i < 4; i++)
-        out->speed_filter_type[i] = (uint8_t)((md_get_u16(raw + 208) >> (i * 4)) & 0x0F);
+        out->speed_filter_type[i] = (uint8_t)((md_get_u16(raw + 200) >> (i * 4)) & 0x0F);
     for (i = 0; i < 4; i++)
-        out->speed_filter_window[i] = raw[210 + i];
+        out->speed_filter_window[i] = raw[202 + i];
     for (i = 0; i < 4; i++)
-        out->sbus_channel[i] = (uint8_t)(((md_get_u16(raw + 214) >> (i * 4)) & 0x0F) + 1);
+        out->sbus_channel[i] = (uint8_t)(((md_get_u16(raw + 206) >> (i * 4)) & 0x0F) + 1);
     for (i = 0; i < 4; i++)
-        out->rc_dir_ch[i] = (uint8_t)(((md_get_u16(raw + 216) >> (i * 4)) & 0x0F) + 1);
+        out->rc_dir_ch[i] = (uint8_t)(((md_get_u16(raw + 208) >> (i * 4)) & 0x0F) + 1);
     for (i = 0; i < 4; i++)
-        out->rc_map_mode[i] = (uint8_t)((raw[218] >> i) & 0x01);
+        out->rc_map_mode[i] = (uint8_t)((raw[210] >> i) & 0x01);
     for (i = 0; i < 4; i++)
-        out->rc_dir_en[i] = (uint8_t)((raw[218] >> (4 + i)) & 0x01);
+        out->rc_dir_en[i] = (uint8_t)((raw[210] >> (4 + i)) & 0x01);
     for (i = 0; i < 4; i++)
-        out->sbus_param[i] = md_get_u16(raw + 219 + i * 2);
-    out->sbus_range_min = md_get_u16(raw + 227);
-    out->sbus_range_max = md_get_u16(raw + 229);
+        out->sbus_param[i] = md_get_u16(raw + 211 + i * 2);
+    out->sbus_range_min = md_get_u16(raw + 219);
+    out->sbus_range_max = md_get_u16(raw + 221);
+    /* 底盘（v2.x 新增，offset 223~247） */
+    out->chassis_type   = raw[223];
+    out->wheel_diameter = md_get_u16(raw + 224);
+    for (i = 0; i < 3; i++)
+        out->chassis_geo[i] = md_get_u16(raw + 226 + i * 2);
+    for (i = 0; i < 3; i++)
+        out->chassis_max[i] = md_get_u16(raw + 232 + i * 2);
+    for (i = 0; i < 3; i++)
+        out->chassis_accel[i] = md_get_u16(raw + 238 + i * 2);
+    out->stall_time_ms = md_get_u16(raw + 244);
+    for (i = 0; i < 4; i++)
+        out->motor_map[i] = (uint8_t)((raw[246] >> (i * 2)) & 0x03);
+    for (i = 0; i < 4; i++)
+        out->rc_dir_default[i] = (uint8_t)((raw[247] >> i) & 0x01);
 
     return 1;
 }
@@ -688,51 +719,51 @@ uint16_t md_pack_config(const md_config_t* cfg, uint8_t* out, uint16_t cap)
     for (i = 0; i < 4; i++)
         md_put_u16(out + 20 + i * 2, cfg->encoder_cpr[i]);
     for (i = 0; i < 4; i++)
-        md_put_u16(out + 28 + i * 2, cfg->speed_period_ms[i]);
+        out[28 + i] = cfg->speed_period_ms[i];
 
     v = 0;
     for (i = 0; i < 4; i++)
         v |= (uint16_t)((cfg->speed_pid_type[i] & 0x0F) << (i * 4));
-    md_put_u16(out + 36, v);
+    md_put_u16(out + 32, v);
 
     for (i = 0; i < 4; i++)
-        md_put_u16(out + 38 + i * 2, cfg->speed_olim[i]);
+        md_put_u16(out + 34 + i * 2, cfg->speed_olim[i]);
 
     for (i = 0; i < 4; i++) {
-        md_put_f32(out + 46 + i * 16 + 0,  cfg->speed_kp[i]);
-        md_put_f32(out + 46 + i * 16 + 4,  cfg->speed_ki[i]);
-        md_put_f32(out + 46 + i * 16 + 8,  cfg->speed_kd[i]);
-        md_put_f32(out + 46 + i * 16 + 12, cfg->speed_ilim[i]);
+        md_put_f32(out + 42 + i * 16 + 0,  cfg->speed_kp[i]);
+        md_put_f32(out + 42 + i * 16 + 4,  cfg->speed_ki[i]);
+        md_put_f32(out + 42 + i * 16 + 8,  cfg->speed_kd[i]);
+        md_put_f32(out + 42 + i * 16 + 12, cfg->speed_ilim[i]);
     }
 
     for (i = 0; i < 4; i++)
-        md_put_u16(out + 110 + i * 2, cfg->pos_period_ms[i]);
+        out[106 + i] = cfg->pos_period_ms[i];
 
     v = 0;
     for (i = 0; i < 4; i++)
         v |= (uint16_t)((cfg->pos_pid_type[i] & 0x0F) << (i * 4));
-    md_put_u16(out + 118, v);
+    md_put_u16(out + 110, v);
 
     for (i = 0; i < 4; i++) {
-        md_put_f32(out + 120 + i * 16 + 0,  cfg->pos_kp[i]);
-        md_put_f32(out + 120 + i * 16 + 4,  cfg->pos_ki[i]);
-        md_put_f32(out + 120 + i * 16 + 8,  cfg->pos_kd[i]);
-        md_put_f32(out + 120 + i * 16 + 12, cfg->pos_ilim[i]);
+        md_put_f32(out + 112 + i * 16 + 0,  cfg->pos_kp[i]);
+        md_put_f32(out + 112 + i * 16 + 4,  cfg->pos_ki[i]);
+        md_put_f32(out + 112 + i * 16 + 8,  cfg->pos_kd[i]);
+        md_put_f32(out + 112 + i * 16 + 12, cfg->pos_ilim[i]);
     }
 
     for (i = 0; i < 4; i++)
-        md_put_f32(out + 184 + i * 4, cfg->pos_olim[i]);
+        md_put_f32(out + 176 + i * 4, cfg->pos_olim[i]);
 
     for (i = 0; i < 4; i++)
-        md_put_u16(out + 200 + i * 2, cfg->pos_angle_cpr[i]);
+        md_put_u16(out + 192 + i * 2, cfg->pos_angle_cpr[i]);
 
     v = 0;
     for (i = 0; i < 4; i++)
         v |= (uint16_t)((cfg->speed_filter_type[i] & 0x0F) << (i * 4));
-    md_put_u16(out + 208, v);
+    md_put_u16(out + 200, v);
 
     for (i = 0; i < 4; i++)
-        out[210 + i] = cfg->speed_filter_window[i];
+        out[202 + i] = cfg->speed_filter_window[i];
 
     v = 0;
     for (i = 0; i < 4; i++) {
@@ -740,7 +771,7 @@ uint16_t md_pack_config(const md_config_t* cfg, uint8_t* out, uint16_t cap)
                    ? (uint16_t)(cfg->sbus_channel[i] - 1) : 0;
         v |= (uint16_t)((t & 0x0F) << (i * 4));
     }
-    md_put_u16(out + 214, v);
+    md_put_u16(out + 206, v);
 
     v = 0;
     for (i = 0; i < 4; i++) {
@@ -748,19 +779,36 @@ uint16_t md_pack_config(const md_config_t* cfg, uint8_t* out, uint16_t cap)
                    ? (uint16_t)(cfg->rc_dir_ch[i] - 1) : 0;
         v |= (uint16_t)((t & 0x0F) << (i * 4));
     }
-    md_put_u16(out + 216, v);
+    md_put_u16(out + 208, v);
 
-    out[218] = 0;
+    out[210] = 0;
     for (i = 0; i < 4; i++)
-        out[218] |= (uint8_t)((cfg->rc_map_mode[i] & 0x01) << i);
+        out[210] |= (uint8_t)((cfg->rc_map_mode[i] & 0x01) << i);
     for (i = 0; i < 4; i++)
-        out[218] |= (uint8_t)((cfg->rc_dir_en[i] & 0x01) << (4 + i));
+        out[210] |= (uint8_t)((cfg->rc_dir_en[i] & 0x01) << (4 + i));
 
     for (i = 0; i < 4; i++)
-        md_put_u16(out + 219 + i * 2, cfg->sbus_param[i]);
+        md_put_u16(out + 211 + i * 2, cfg->sbus_param[i]);
 
-    md_put_u16(out + 227, cfg->sbus_range_min);
-    md_put_u16(out + 229, cfg->sbus_range_max);
+    md_put_u16(out + 219, cfg->sbus_range_min);
+    md_put_u16(out + 221, cfg->sbus_range_max);
+
+    /* 底盘（v2.x 新增，offset 223~247） */
+    out[223] = cfg->chassis_type;
+    md_put_u16(out + 224, cfg->wheel_diameter);
+    for (i = 0; i < 3; i++)
+        md_put_u16(out + 226 + i * 2, cfg->chassis_geo[i]);
+    for (i = 0; i < 3; i++)
+        md_put_u16(out + 232 + i * 2, cfg->chassis_max[i]);
+    for (i = 0; i < 3; i++)
+        md_put_u16(out + 238 + i * 2, cfg->chassis_accel[i]);
+    md_put_u16(out + 244, cfg->stall_time_ms);
+    out[246] = 0;
+    for (i = 0; i < 4; i++)
+        out[246] |= (uint8_t)((cfg->motor_map[i] & 0x03) << (i * 2));
+    out[247] = 0;
+    for (i = 0; i < 4; i++)
+        out[247] |= (uint8_t)((cfg->rc_dir_default[i] & 0x01) << i);
 
     return MD_CONFIG_SIZE;
 }

@@ -2,7 +2,7 @@
 
 > **目录：** `mdc_lib/rp2040/c-sdk/`
 > **定位：** 通用调用库 —— 只做**打包要发送的字节**与**解析收到的字节**，串口收发由你实现。
-> **协议依据：** [`../../协议规范.md`](../../协议规范.md)（布局 v2.1，config_t=231B）
+> **协议依据：** [`../../协议规范.md`](../../协议规范.md)（布局 v2.x，config_t=248B）
 > **API 规范：** [`../API.md`](../API.md)（同一套 `md_*` 签名，本目录逐函数对应）
 
 ---
@@ -13,7 +13,7 @@
 - **CRC8 / 组帧 / 帧解析**：`md_crc8`、`md_build_frame`、`md_parse_frame`。
 - **流式解析器**：`md_parser_t` + `md_parser_init` + `md_parser_feed`，逐字节喂入，自动找 `0xAA` 同步、校验 CRC，可在 UART 中断里直接调用。
 - **文本指令层**：`md_text_build` + 10 个便捷封装（`/version`、`/help`、`/status`、`/check`、`/detect`、`/save`、`/load`、`/reset`、`/enczero`、`/mode`）。
-- **二进制命令层**：15 个打包函数（PING ~ REBOOT，见 `mdc_lib.h`）。
+- **二进制命令层**：16 个打包函数（PING ~ REBOOT，见 `mdc_lib.h`）。
 - **解析层**：`md_parse_ack` / `md_parse_status`（56B/72B 自动兼容）/ `md_parse_detect` / `md_parse_sbus` / `md_parse_config` ↔ `md_pack_config`。
 
 ## 二、API 速览
@@ -119,7 +119,7 @@ void motor_ctrl_demo(void)
 | 收到帧但 CRC 总失败 | 确认 `md_crc8` 计算范围是 CMD+LEN+DATA（不含 SYNC），与固件一致 |
 | 文本指令无响应 | 文本行必须以 `\n` 结尾（本库已自动带） |
 | 控制帧发了电机不动 | 检查 `/priority`（USB 控制需 1）、`/timeout` 是否超时归零、协议识别期拒绝控制帧 |
-| 中断里栈紧张 | `md_bin_write_param` 使用 231B 临时缓冲（栈）；可改用 `md_pack_config` 到静态缓冲后再 `md_build_frame` |
+| 中断里栈紧张 | `md_bin_write_param` 使用 248B 临时缓冲（栈）；可改用 `md_pack_config` 到静态缓冲后再 `md_build_frame` |
 
 ## 六、校验状态
 

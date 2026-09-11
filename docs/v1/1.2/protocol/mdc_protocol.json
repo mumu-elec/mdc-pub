@@ -1,0 +1,274 @@
+{
+  "device": "Motor Driver Controller",
+  "target_fw": "v1.1.0",
+  "protocol_version": 1,
+  "config_size": 231,
+  "sync": 170,
+  "crc8": {
+    "poly": 7,
+    "init": 0,
+    "range": "CMD+LEN+DATA"
+  },
+  "commands": [
+    {
+      "name": "DEBUG_SBUS",
+      "value": 67
+    },
+    {
+      "name": "DEBUG_SPEED",
+      "value": 68
+    },
+    {
+      "name": "DETECT_REPORT",
+      "value": 241
+    },
+    {
+      "name": "ENTER_BL",
+      "value": 82
+    },
+    {
+      "name": "FACTORY_RESET",
+      "value": 34
+    },
+    {
+      "name": "LOAD_EEPROM",
+      "value": 33
+    },
+    {
+      "name": "MOTOR_CTRL",
+      "value": 49
+    },
+    {
+      "name": "MOTOR_RAW",
+      "value": 48
+    },
+    {
+      "name": "PING",
+      "value": 1
+    },
+    {
+      "name": "READ_PARAM",
+      "value": 16
+    },
+    {
+      "name": "REBOOT",
+      "value": 83
+    },
+    {
+      "name": "SAVE_EEPROM",
+      "value": 32
+    },
+    {
+      "name": "SBUS_DATA",
+      "value": 242
+    },
+    {
+      "name": "STATUS_REPORT",
+      "value": 240
+    },
+    {
+      "name": "SUBSCRIBE",
+      "value": 64
+    },
+    {
+      "name": "UNSUBSCRIBE",
+      "value": 65
+    },
+    {
+      "name": "WRITE_FIELD",
+      "value": 18
+    },
+    {
+      "name": "WRITE_PARAM",
+      "value": 17
+    }
+  ],
+  "config_fields": [
+    {
+      "name": "magic",
+      "offset": 0,
+      "size": 4,
+      "protected": true
+    },
+    {
+      "name": "hw_ver_major",
+      "offset": 4,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "hw_ver_minor",
+      "offset": 5,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "hw_variant",
+      "offset": 6,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "sw_ver_major",
+      "offset": 7,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "sw_ver_patch",
+      "offset": 8,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "_reserved",
+      "offset": 9,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "crc",
+      "offset": 10,
+      "size": 1,
+      "protected": true
+    },
+    {
+      "name": "baud_rate",
+      "offset": 11,
+      "size": 4,
+      "protected": false
+    },
+    {
+      "name": "cmd_timeout_ms",
+      "offset": 15,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "comm_flags",
+      "offset": 17,
+      "size": 1,
+      "protected": false
+    },
+    {
+      "name": "control_mode",
+      "offset": 18,
+      "size": 1,
+      "protected": false
+    },
+    {
+      "name": "motor_invert",
+      "offset": 19,
+      "size": 1,
+      "protected": false
+    },
+    {
+      "name": "encoder_cpr",
+      "offset": 20,
+      "size": 8,
+      "protected": false
+    },
+    {
+      "name": "speed_period_ms",
+      "offset": 28,
+      "size": 8,
+      "protected": false
+    },
+    {
+      "name": "speed_pid_type",
+      "offset": 36,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "speed_olim",
+      "offset": 38,
+      "size": 8,
+      "protected": false
+    },
+    {
+      "name": "speed_ctrl_params",
+      "offset": 46,
+      "size": 64,
+      "protected": false
+    },
+    {
+      "name": "pos_period_ms",
+      "offset": 110,
+      "size": 8,
+      "protected": false
+    },
+    {
+      "name": "pos_pid_type",
+      "offset": 118,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "pos_ctrl_params",
+      "offset": 120,
+      "size": 64,
+      "protected": false
+    },
+    {
+      "name": "pos_olim",
+      "offset": 184,
+      "size": 16,
+      "protected": false
+    },
+    {
+      "name": "pos_angle_cpr",
+      "offset": 200,
+      "size": 8,
+      "protected": false
+    },
+    {
+      "name": "speed_filter_type",
+      "offset": 208,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "speed_filter_window",
+      "offset": 210,
+      "size": 4,
+      "protected": false
+    },
+    {
+      "name": "sbus_channel_pack",
+      "offset": 214,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "rc_dir_ch",
+      "offset": 216,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "rc_map_mode",
+      "offset": 218,
+      "size": 1,
+      "protected": false
+    },
+    {
+      "name": "sbus_param",
+      "offset": 219,
+      "size": 8,
+      "protected": false
+    },
+    {
+      "name": "sbus_range_min",
+      "offset": 227,
+      "size": 2,
+      "protected": false
+    },
+    {
+      "name": "sbus_range_max",
+      "offset": 229,
+      "size": 2,
+      "protected": false
+    }
+  ]
+}

@@ -37,7 +37,7 @@ import mdc_lite   # 同族独立极简库（send-only，非完整库 mdc_lib）
 
 # 只关心的命令/帧
 MD_CMD_STATUS_REPORT = 0xF0
-MD_MAX_DATA = 250
+MD_MAX_DATA = 248
 MD_PARSER_BUF = 256
 
 __all__ = ["MDLite"]

@@ -62,7 +62,7 @@ Arduino UNO                     Motor Driver Controller
 - `mdc_lib.h` / `mdc_lib.cpp` **已随例程内置（本目录）**，与 `motor_driver_uno.ino` 同目录；Arduino IDE 打开 `.ino` 即自动编译，无需手动复制或添加源文件。
 - 如需更新库版本，用 `../../../../../../../../avr/arduino_uno/` 下的同名文件覆盖本目录文件即可。
 - 代码中 `#include "mdc_lib.h"` 即可使用全部 `md_*` API。
-- 内存说明：UNO 只有 2KB SRAM，本例程使用 mdc_lib **默认配置**（流式解析器缓冲 256B，声明为全局静态，0xF0 状态帧整帧 60B、甚至 READ_PARAM 的 231B 应答都能完整解析）。注意：若想裁剪 `MD_PARSER_BUF`，必须通过编译选项 `-DMD_PARSER_BUF=xxx` **同时作用于 mdc_lib.cpp**（Arduino 会分别编译 sketch 目录下的 .cpp），否则两个编译单元结构体布局不一致会导致解析器越界——不建议初学者修改。
+- 内存说明：UNO 只有 2KB SRAM，本例程使用 mdc_lib **默认配置**（流式解析器缓冲 256B，声明为全局静态，0xF0 状态帧整帧 60B、甚至 READ_PARAM 的 248B 应答都能完整解析）。注意：若想裁剪 `MD_PARSER_BUF`，必须通过编译选项 `-DMD_PARSER_BUF=xxx` **同时作用于 mdc_lib.cpp**（Arduino 会分别编译 sketch 目录下的 .cpp），否则两个编译单元结构体布局不一致会导致解析器越界——不建议初学者修改。
 
 ## mdc_lib 调用指南
 

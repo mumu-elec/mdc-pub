@@ -1,9 +1,9 @@
-# 06_config_manager — 配置读写工具（config_t 231B）
+# 06_config_manager — 配置读写工具（config_t 248B）
 
 ## 功能
 
 - 基于 mdc_lib 的完整配置读写演示：帧打包/解析、config_t 解析/打包全部调用 mdc_lib。
-- `dump`：`md_bin_read_param()` 发送 → 接收 231B 应答 → `md_parse_config` 解析为 dict → 按分组打印全部字段（通道数组逐通道显示）。
+- `dump`：`md_bin_read_param()` 发送 → 接收 248B 应答 → `md_parse_config` 解析为 dict → 按分组打印全部字段（通道数组逐通道显示）。
 - `set <field[:ch]> <value>`：读当前配置 → 修改 dict → `md_pack_config` 打包 + `md_bin_write_param` 写回（仅 RAM）。
 - `field <名称|偏移> <value>`：演示 `md_bin_write_field` 按偏移写单个标量字段。
 - `save`：`md_bin_save()` 持久化到 EEPROM。
@@ -50,9 +50,9 @@ pip install pyserial        # 或 pip install -r requirements.txt
 | API | 返回 | 说明 |
 |-----|------|------|
 | `md_bin_read_param()` | 整帧 bytes | 打包 0x10 READ_PARAM |
-| `md_parse_config(raw231)` | `dict` | 231B config_t → 字段字典（键名见 API.md §6.5） |
-| `md_pack_config(dict)` | 231B bytes | 字段字典 → config_t（缺省取中性值；受保护区置 0） |
-| `md_bin_write_param(cfg)` | 整帧 bytes | 打包 0x11 WRITE_PARAM（cfg 可为 dict 或 231B bytes） |
+| `md_parse_config(raw248)` | `dict` | 248B config_t → 字段字典（键名见 API.md §6.5） |
+| `md_pack_config(dict)` | 248B bytes | 字段字典 → config_t（缺省取中性值；受保护区置 0） |
+| `md_bin_write_param(cfg)` | 整帧 bytes | 打包 0x11 WRITE_PARAM（cfg 可为 dict 或 248B bytes） |
 | `md_bin_write_field(field_id, value, value_len)` | 整帧 bytes | 打包 0x12 WRITE_FIELD（`[field_id:2B LE][value]`，offset<12 受保护区拒绝） |
 | `md_bin_save()` | 整帧 bytes | 打包 0x20 SAVE_EEPROM |
 | `MDParser()` / `parser.feed(byte)` | `(cmd, payload)` 或 `None` | 流式解析应答帧 |
@@ -67,7 +67,7 @@ ser = serial.Serial("COM5", 2000000)
 parser = mdc_lib.MDParser()
 
 ser.write(mdc_lib.md_bin_read_param())     # ① 读配置
-raw = ...                                  # ② 收 231B 应答（本例程封装为 _wait_frame）
+raw = ...                                  # ② 收 248B 应答（本例程封装为 _wait_frame）
 cfg = mdc_lib.md_parse_config(raw)         # ③ 解析为 dict
 cfg["encoder_cpr"][0] = 500                # ④ 修改字段
 ser.write(mdc_lib.md_bin_write_param(cfg)) # ⑤ dict 自动打包回写（RAM only）

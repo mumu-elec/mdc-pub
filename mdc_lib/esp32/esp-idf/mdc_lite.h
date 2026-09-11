@@ -45,7 +45,7 @@ extern "C" {
 /* ==================== 常量（帧格式，独立定义，不依赖 mdc_lib.h） ==================== */
 
 #define MD_LITE_SYNC           0xAAu   /* 二进制帧同步字 */
-#define MD_LITE_MAX_DATA       250u    /* DATA 段最大长度 */
+#define MD_LITE_MAX_DATA       248u    /* DATA 段最大长度（= config_t 大小） */
 #define MD_LITE_CRC8_POLY      0x07u   /* CRC8 多项式（初值 0，按位计算） */
 
 /* 仅关注的命令号（协议规范 §3.3），与 mdc_lib 字节一致 */

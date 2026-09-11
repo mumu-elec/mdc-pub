@@ -6,7 +6,7 @@
 - 依次执行：
   1. `md_text_version()` —— 文本指令 `/version`，打印设备硬件/软件版本回显；
   2. `md_bin_ping()` —— 发送 0x01 PING 帧，用 `MDParser` 流式解析 ACK，`md_parse_ack` 校验（err=0 成功）；
-  3. `md_bin_read_param()` —— 发送 0x10 READ_PARAM，接收 231B config_t 应答，用 `md_parse_config` 解析为 dict 并打印版本区/字段。
+  3. `md_bin_read_param()` —— 发送 0x10 READ_PARAM，接收 248B config_t 应答，用 `md_parse_config` 解析为 dict 并打印版本区/字段。
 
 ## 硬件与环境要求
 
@@ -38,7 +38,7 @@ pip install pyserial        # 或 pip install -r requirements.txt
 | `md_text_version()` | `b"/version\n"` | 文本指令查版本 |
 | `MDParser()` / `parser.feed(byte)` | `(cmd, payload)` 或 `None` | 逐字节流式解析，自动同步 + CRC8 校验 |
 | `md_parse_ack(payload)` | `Ack(cmd, err)` | 解析 ACK（err=0 成功，非 0 失败） |
-| `md_parse_config(raw)` | `dict` | 解析 231B config_t → 字段字典 |
+| `md_parse_config(raw)` | `dict` | 解析 248B config_t → 字段字典 |
 
 实际调用示例（串口收发由用户侧实现）：
 
@@ -56,8 +56,8 @@ for b in ser.read(64):                          # ② 接收字节喂给解析�
         print("OK" if ack.err == 0 else "FAIL")
 
 ser.write(mdc_lib.md_bin_read_param())          # 0x10 READ_PARAM
-# ... 同样用 parser.feed 收 231B 应答 ...
-cfg = mdc_lib.md_parse_config(raw_231)          # 解析为 dict（键名见 API.md §6.5）
+# ... 同样用 parser.feed 收 248B 应答 ...
+cfg = mdc_lib.md_parse_config(raw_248)          # 解析为 dict（键名见 API.md §6.5）
 print(cfg["baud_rate"], cfg["control_mode"])
 ```
 
@@ -77,7 +77,7 @@ python demo_ping.py --port COM5
 |------|------|
 | `--port` | 串口号（如 `COM5`）；缺省自动选择第一个 CH340 |
 
-预期输出：`/version` 版本回显；`PING 成功`；`config_t 231B` 前 16 字节 hex；`md_parse_config` 解析出的关键字段（波特率、控制模式、编码器线数、PID 参数等）。
+预期输出：`/version` 版本回显；`PING 成功`；`config_t 248B` 前 16 字节 hex；`md_parse_config` 解析出的关键字段（波特率、控制模式、编码器线数、PID 参数等）。
 
 ## 代码结构
 

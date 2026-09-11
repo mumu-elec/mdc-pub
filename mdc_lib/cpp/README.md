@@ -2,7 +2,7 @@
 
 > **库名：** mdc_lib（Motor Driver Controller Library）
 > **平台：** 宿主（PC / 树莓派 / Linux / Windows / macOS）C++17
-> **协议依据：** [`../API.md`](../API.md)（统一 API 规范，权威）+ [`../协议规范.md`](../协议规范.md)（布局 v2.1，config_t=231B）
+> **协议依据：** [`../API.md`](../API.md)（统一 API 规范，权威）+ [`../协议规范.md`](../协议规范.md)（布局 v2.x，config_t=248B）
 > **特性：** 单头文件、命名空间 `mdc`、仅依赖标准库、UTF-8 中文注释、无硬件依赖（串口由用户实现）。
 
 ---
@@ -30,7 +30,7 @@
 
 | 类别 | 本实现签名 | 说明 |
 |------|-----------|------|
-| 打包函数 | `std::vector<uint8_t>` | 返回整帧字节；参数非法（DATA 超 250B、ch 越界、pwm>1000、受保护区偏移等）**抛 `std::invalid_argument`** |
+| 打包函数 | `std::vector<uint8_t>` | 返回整帧字节；参数非法（DATA 超 248B、ch 越界、pwm>1000、受保护区偏移等）**抛 `std::invalid_argument`** |
 | 文本函数 | `std::string` | 含结尾 `'\n'`（UTF-8），可直接写入串口 |
 | 解析函数 | `bool` + 输出参数（结构体引用） | 成功返回 `true` 并写入结果；payload 长度不符 / CRC 失败返回 `false`，输出参数保持不变（不抛异常） |
 | 流式 Parser | `Parser::feed(uint8_t)` → `std::optional<std::pair<uint8_t, std::vector<uint8_t>>>` | 收齐一帧且 CRC 通过返回 `{cmd, payload}`，否则 `std::nullopt` |
@@ -66,18 +66,19 @@ text_build("/uart2",     "115200 0 uart");
 text_build("/sbusrange", "172 1811");
 ```
 
-### 二进制命令层（15 个，返回整帧 `std::vector<uint8_t>`）
+### 二进制命令层（16 个，返回整帧 `std::vector<uint8_t>`）
 
 | 函数 | CMD | DATA |
 |------|:---:|------|
 | `bin_ping()` | 0x01 | 无 |
 | `bin_read_param()` | 0x10 | 无 |
-| `bin_write_param(const std::vector<uint8_t>&)`（须 231B，否则抛异常） | 0x11 | config_t 231B |
-| `bin_write_param(const Config&)`（便捷重载，内部 pack_config） | 0x11 | config_t 231B |
-| `bin_write_field(uint16_t field_id, const std::vector<uint8_t>& value)`（offset<12 抛异常） | 0x12 | `[field_id:2B LE][value]` |
+| `bin_write_param(const std::vector<uint8_t>&)`（须 248B，否则抛异常） | 0x11 | config_t 248B |
+| `bin_write_param(const Config&)`（便捷重载，内部 pack_config） | 0x11 | config_t 248B |
+| `bin_write_field(uint16_t field_id, const std::vector<uint8_t>& value)`（offset<11 抛异常） | 0x12 | `[field_id:2B LE][value]` |
 | `bin_save()` / `bin_load()` / `bin_factory_reset()` | 0x20/0x21/0x22 | 无 |
 | `bin_motor_raw(uint8_t ch, uint8_t dir, uint16_t pwm)`（ch 0~3、dir 0/1、pwm≤1000） | 0x30 | `[ch][dir][pwm:2B LE]` |
 | `bin_motor_ctrl(int32_t t0, t1, t2, t3)` | 0x31 | `[4×int32 LE]` |
+| `bin_motor_jog(uint8_t ch, int16_t rpm)` | 0x32 | `[ch:1B][rpm:2B LE 有符号]`（单轮点动，仅底盘模式生效；rpm=0 清除） |
 | `bin_subscribe(uint16_t interval_ms)` | 0x40 | `[interval_ms:2B LE]`（固件钳位 ≥20ms，库不拦截） |
 | `bin_unsubscribe()` | 0x41 | 无 |
 | `bin_debug_sbus(uint8_t enable)` / `bin_debug_speed(uint8_t enable)` | 0x43/0x44 | `[enable:1B]` |
@@ -91,8 +92,8 @@ text_build("/sbusrange", "172 1811");
 | `parse_status(payload, Status&)` | `struct Status` | 56B（常规）/ 72B（扩展）按 len 自动兼容，见 §五 |
 | `parse_detect(payload, Detect&)` | `struct Detect { proto, inv, baud }` | 6B：`[proto][inv][baud:4B LE]`；proto 0=失败 1=SBUS 2=UART 3=ELRS |
 | `parse_sbus(payload, std::array<uint16_t,16>&)` | 16×uint16 | 32B，LE |
-| `parse_config(raw231, Config&)` | `struct Config` | 231B 全字段（含位域） |
-| `pack_config(const Config&)` → `std::vector<uint8_t>` | 231B | 往返无损；受保护区 offset 0~10 置 0 |
+| `parse_config(raw248, Config&)` | `struct Config` | 248B 全字段（含位域） |
+| `pack_config(const Config&)` → `std::vector<uint8_t>` | 248B | 往返无损；受保护区 offset 0~10 置 0 |
 
 ## 四、流式解析器 `Parser`
 
@@ -217,7 +218,7 @@ int main() {
 
 - `g++ -std=c++17 -Wall -Wextra` 编译**零警告**（g++ 15.1.0 验证）；
 - 运行 `test_mdc_lib` **367 项断言全 PASS**（`main()` 返回 0）；
-- 覆盖 API.md §8 全部验证向量：`crc8([0x01,0x00])=0x15`、`crc8("123456789")=0xF4`、`build_frame(0x01,b"")=AA 01 00 15`、`build_frame(0x40,[0x32,0x00])=AA 40 02 32 00 9E`、`motor_ctrl(100,-200,0,300)` DATA 段、parse_status 56B/72B 偏移、parse_config↔pack_config 往返、流式解析器（垃圾/坏 CRC/两帧连发/LEN>250/半帧/批量）。
+- 覆盖 API.md §8 全部验证向量：`crc8([0x01,0x00])=0x15`、`crc8("123456789")=0xF4`、`build_frame(0x01,b"")=AA 01 00 15`、`build_frame(0x40,[0x32,0x00])=AA 40 02 32 00 9E`、`motor_ctrl(100,-200,0,300)` DATA 段、parse_status 56B/72B 偏移、parse_config↔pack_config 往返、流式解析器（垃圾/坏 CRC/两帧连发/LEN>248/半帧/批量）。
 
 ## 十一、常见问题
 

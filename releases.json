@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-11",
+  "updated": "2026-09-12",
   "site": "https://mumu-elec.github.io/mdc-pub",
   "bootloader": {
     "ver": "1.0",
@@ -17,9 +17,8 @@
       "resources": [
         { "name": "技术手册 v2.0（当前版）", "href": "docs/technical-manual.md", "note": "硬件规格 / 接线 / 通信协议 / 底盘功能 / 固件升级 / 故障排查；v2.0 发布快照见 docs/v2/2.0/" },
         { "name": "技术手册 v2.0 PDF", "href": "docs/v2/2.0/MDC技术手册-v2.0.pdf", "note": "v2.0 随线发布 PDF 版" },
-        { "name": "例程包 v2.0", "href": "docs/v2/2.0/mdc_examples_v2.0.zip", "note": "Python×6 + Arduino×1，248B 协议口径（D=2），字节级自测通过" },
-        { "name": "例程库 mdc_lib（248B 对齐版整理中）", "href": "mdc_lib/README.md", "note": "12 平台通用调用库；当前按 231B 旧布局（v1 线协议）编写，对齐 v2 线 248B 前，v2 线配置读写请用例程包 v2.0" },
-        { "name": "通信协议规范（231B 旧口径）", "href": "mdc_lib/协议规范.md", "note": "v2 线协议权威版本以技术手册 v2.0 §5 为准（248B）；本规范待对齐后更新" }
+        { "name": "例程 v2.0（GitHub）", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/2.0/examples", "note": "Python×6 + Arduino×1，248B 协议口径（D=2），字节级自测通过；多文件请在 GitHub 浏览 / 下载" },
+        { "name": "例程库 mdc_lib v2.0（GitHub）", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/mdc_lib", "note": "12 平台通用调用库；2026-09-12 与固件 v1.2.0 / 协议 D=2 的 248B 布局对齐（此前 231B 版本仅适配 v1.1.x 存档线）" }
       ],
       "host_releases": [
         {
@@ -28,7 +27,8 @@
           "notes": "对外首发：底盘 / 单电机一体上位机（协议 D=2，与固件 v1.2.0 配套）",
           "offline": "release/电机上位机-v2.0.html",
           "online": "release/电机上位机-v2.0-online.html",
-          "web": "web/v2/"
+          "web": "web/v2/",
+          "detail": "host/v2.0.html"
         }
       ],
       "releases": [
@@ -49,7 +49,7 @@
           "resources": [
             { "name": "技术手册 v2.0（本版随发）", "href": "docs/v2/2.0/technical-manual.md", "note": "v2.0 发布快照，永不覆盖" },
             { "name": "技术手册 v2.0 PDF", "href": "docs/v2/2.0/MDC技术手册-v2.0.pdf", "note": "v2.0 随线发布 PDF 版" },
-            { "name": "例程包 v2.0", "href": "docs/v2/2.0/mdc_examples_v2.0.zip", "note": "Python×6 + Arduino×1（248B 协议口径）" }
+            { "name": "例程 v2.0（GitHub）", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/2.0/examples", "note": "Python×6 + Arduino×1（248B 协议口径）；多文件在 GitHub 浏览 / 下载，zip 快照留存于 docs/v2/2.0/" }
           ],
           "host": {
             "ver": "2.0",
@@ -68,7 +68,9 @@
       "resources": [
         { "name": "技术手册 v1.2（存档）", "href": "docs/v1/1.2/technical-manual.md", "note": "v1 线配套手册（存档末版），发布快照永不覆盖" },
         { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf", "note": "v1.2 随线发布 PDF 版" },
-        { "name": "关于例程库与协议规范", "note": "v1 线已存档，不补新例程；站上 mdc_lib 例程库与协议规范按 231B 布局（v1 协议时代）编写，可作 v1 线参考，其头部「配套 v1.2.0+/D=2」声明有误待更正，248B 对齐版整理中" }
+        { "name": "AI 接口手册 v1.0", "href": "docs/v1/1.2/ai-manual.md", "note": "面向 AI Agent 的公开机器接口手册（英文）；口径 v1：硬件 v1.1.x / 固件 v1.1.0 / 协议 D=1；配套协议 JSON 见 docs/v1/1.2/protocol/" },
+        { "name": "通信协议规范（231B 布局 · 存档）", "href": "docs/v1/1.2/protocol/协议规范-231B.md", "note": "v1 协议时代的协议规范冻结副本（231B 布局，配套 v1.1.x/D=1）；v2 线权威版本以技术手册 v2.0 §5（248B）为准" },
+        { "name": "关于例程库与协议规范", "note": "v1 线已存档，不补新例程；站上 mdc_lib 例程库与协议规范已于 2026-09-12 对齐 v2 线 248B 布局（协议 D=2），不再适配 v1.1.x——231B 旧规范冻结副本见本线「通信协议规范（231B 布局 · 存档）」" }
       ],
       "host_releases": [
         {
@@ -77,7 +79,8 @@
           "notes": "首个对外发布，配套固件 v1.1.0（协议 D=1）",
           "offline": "release/电机上位机-v1.0.html",
           "online": null,
-          "web": null
+          "web": null,
+          "detail": "host/v1.0.html"
         },
         {
           "ver": "1.1",
@@ -85,7 +88,8 @@
           "notes": "v1 线最终版本：联网版（在线固件库 / 更新检查）与完全离线版双形态，配套固件 v1.1.1 / v1.1.2",
           "offline": "release/电机上位机-v1.1.html",
           "online": "release/电机上位机-v1.1-online.html",
-          "web": "web/v1/"
+          "web": "web/v1/",
+          "detail": "host/v1.1.html"
         }
       ],
       "releases": [
@@ -104,7 +108,9 @@
           ],
           "resources": [
             { "name": "技术手册 v1.2（v1 线配套）", "href": "docs/v1/1.2/technical-manual.md", "note": "v1 线配套手册（存档末版）" },
-            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" }
+            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" },
+            { "name": "AI 接口手册 v1.0", "href": "docs/v1/1.2/ai-manual.md", "note": "口径 v1：硬件 v1.1.x / 固件 v1.1.0 / 协议 D=1；配套协议 JSON 见 docs/v1/1.2/protocol/" },
+            { "name": "通信协议规范（231B 布局 · 存档）", "href": "docs/v1/1.2/protocol/协议规范-231B.md", "note": "v1 协议时代规范冻结副本；v2 线以技术手册 v2.0 §5（248B）为准" }
           ],
           "host": {
             "ver": "1.0",
@@ -125,7 +131,9 @@
           ],
           "resources": [
             { "name": "技术手册 v1.2（沿用首发）", "href": "docs/v1/1.2/technical-manual.md", "note": "bug 修复版：无新功能不更新资料，沿用 v1 线手册（存档）" },
-            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" }
+            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" },
+            { "name": "AI 接口手册 v1.0", "href": "docs/v1/1.2/ai-manual.md", "note": "口径 v1：硬件 v1.1.x / 协议 D=1；配套协议 JSON 见 docs/v1/1.2/protocol/" },
+            { "name": "通信协议规范（231B 布局 · 存档）", "href": "docs/v1/1.2/protocol/协议规范-231B.md", "note": "v1 协议时代规范冻结副本；v2 线以技术手册 v2.0 §5（248B）为准" }
           ],
           "host": {
             "ver": "1.1",
@@ -146,7 +154,9 @@
           ],
           "resources": [
             { "name": "技术手册 v1.2（沿用首发）", "href": "docs/v1/1.2/technical-manual.md", "note": "bug 修复版：无新功能不更新资料，沿用 v1 线手册（存档）" },
-            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" }
+            { "name": "技术手册 v1.2 PDF", "href": "docs/v1/1.2/MDC技术手册-v1.2.pdf" },
+            { "name": "AI 接口手册 v1.0", "href": "docs/v1/1.2/ai-manual.md", "note": "口径 v1：硬件 v1.1.x / 协议 D=1；配套协议 JSON 见 docs/v1/1.2/protocol/" },
+            { "name": "通信协议规范（231B 布局 · 存档）", "href": "docs/v1/1.2/protocol/协议规范-231B.md", "note": "v1 协议时代规范冻结副本；v2 线以技术手册 v2.0 §5（248B）为准" }
           ],
           "host": {
             "ver": "1.1",

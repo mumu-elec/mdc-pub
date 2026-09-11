@@ -1,4 +1,4 @@
 # 请求：写入全部配置（对应固件 WRITE_PARAM 0x11，仅 RAM，受保护字段自动还原）
-uint8[231] config
+uint8[248] config
 ---
 bool success

@@ -53,7 +53,7 @@ sp.write(cmdStatus);
 // 接收回显（用户实现）：读到的字节原样打印即可，本例程不需要解析
 ```
 
-> 全部文本指令（24 条）都可用 `mdc::text_build("/xxx", "参数")` 构造；`/version`、`/status` 等常用指令还有 `text_version()`、`text_status()` 等便捷封装。
+> 全部文本指令（27 条）都可用 `mdc::text_build("/xxx", "参数")` 构造；`/version`、`/status` 等常用指令还有 `text_version()`、`text_status()` 等便捷封装。
 
 ## 编译方法
 

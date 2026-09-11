@@ -34,7 +34,8 @@ for _stream in (sys.stdout, sys.stderr):
 import mdc_lib  # noqa: E402
 from mdc_lib import (  # noqa: E402
     MDC, MDParser, md_bin_debug_sbus, md_bin_debug_speed, md_bin_enter_bl,
-    md_bin_factory_reset, md_bin_load, md_bin_motor_ctrl, md_bin_motor_raw,
+    md_bin_factory_reset, md_bin_load, md_bin_motor_ctrl, md_bin_motor_jog,
+    md_bin_motor_raw,
     md_bin_ping, md_bin_read_param, md_bin_reboot, md_bin_save,
     md_bin_subscribe, md_bin_unsubscribe, md_bin_write_field,
     md_bin_write_param, md_build_frame, md_crc8, md_pack_config,
@@ -100,9 +101,9 @@ check_eq(md_build_frame(0x01, b""), b"\xAA\x01\x00\x15", "build_frame(0x01, b'')
 sub = md_build_frame(0x40, b"\x32\x00")
 check_eq(sub, b"\xAA\x40\x02\x32\x00\x9E", "build_frame(0x40, [0x32,0x00]) == AA 40 02 32 00 9E")
 check_eq(md_build_frame(0x40, [0x32, 0x00]), sub, "data 接受整数列表")
-big = bytes(range(250))
-check_eq(len(md_build_frame(0x11, big)), 4 + 250, "DATA 250B 上限可打包")
-check_raises(ValueError, md_build_frame, 0x11, bytes(251))   # 超长
+big = bytes(range(248))
+check_eq(len(md_build_frame(0x11, big)), 4 + 248, "DATA 248B 上限可打包")
+check_raises(ValueError, md_build_frame, 0x11, bytes(249))   # 超长
 check_raises(ValueError, md_build_frame, 0x100)              # cmd 越界
 check_raises(ValueError, md_build_frame, -1)
 check_raises(ValueError, md_build_frame, 0x01, "not-bytes")  # 类型非法
@@ -151,7 +152,7 @@ frame_b = md_build_frame(0xF0, status_56)         # 0xF0 STATUS_REPORT 56B
 bad_frame = bytearray(md_build_frame(0x10, b"\x01\x02\x03"))
 bad_frame[-1] ^= 0x55                              # 坏 CRC
 stream = (b"noise bytes \x00\xFF"                 # 无 0xAA 的文本噪声
-          + b"\xAA\xFF\x00"                       # LEN=255 > 250：伪同步应被丢弃
+          + b"\xAA\xFF\x00"                       # LEN=255 > 248：伪同步应被丢弃
           + bytes(bad_frame)                       # 坏 CRC 帧
           + frame_a + frame_b)                     # 两帧连发
 p2 = MDParser()
@@ -246,12 +247,12 @@ check_eq(md_bin_enter_bl(), md_build_frame(0x52), "enter_bl 帧")
 check_eq(md_bin_reboot(), md_build_frame(0x53), "reboot 帧")
 
 # write_param：bytes 与 dict 两种形态
-raw231 = bytes(range(231))
-check_eq(md_bin_write_param(raw231), md_build_frame(0x11, raw231), "write_param(bytes)")
+raw248 = bytes(range(248))
+check_eq(md_bin_write_param(raw248), md_build_frame(0x11, raw248), "write_param(bytes)")
 cfg_demo = {"baud_rate": 115200, "protocol": 2}
 check_eq(md_bin_write_param(cfg_demo), md_build_frame(0x11, md_pack_config(cfg_demo)),
          "write_param(dict) 自动打包")
-check_raises(ValueError, md_bin_write_param, bytes(230))   # 长度不符
+check_raises(ValueError, md_bin_write_param, bytes(247))   # 长度不符
 
 # write_field：[field_id:2B LE][value:nB]
 check_eq(md_bin_write_field(38, b"\x20\x03"),
@@ -280,6 +281,16 @@ check_eq(mc, md_build_frame(0x31, struct.pack("<4i", 100, -200, 0, 300)),
 check_eq(md_bin_motor_ctrl(-2147483648, 2147483647, 0, 0)[3:7],
          b"\x00\x00\x00\x80", "int32 下边界")
 check_raises(ValueError, md_bin_motor_ctrl, 2147483648, 0, 0, 0)
+
+# motor_jog：[ch][rpm int16 LE 有符号]（0x32，仅底盘模式生效，v2 新增）
+mj = md_bin_motor_jog(1, -300)
+check_eq(mj[3:-1], bytes.fromhex("01 D4 FE"), "motor_jog(1,-300) DATA 段 == 01 D4 FE")
+check_eq(mj, md_build_frame(0x32, struct.pack("<Bh", 1, -300)),
+         "motor_jog 整帧 == build_frame(0x32, [B,h])")
+check_eq(md_bin_motor_jog(0, 0)[4:6], b"\x00\x00", "motor_jog(0,0) rpm=0 清除覆盖")
+check_raises(ValueError, md_bin_motor_jog, 4, 0)
+check_raises(ValueError, md_bin_motor_jog, 0, 32768)
+check_raises(ValueError, md_bin_motor_jog, 0, -32769)
 
 # subscribe / debug
 check_eq(md_bin_subscribe(50), md_build_frame(0x40, b"\x32\x00"), "subscribe(50) DATA 32 00")
@@ -388,28 +399,45 @@ cfg = {
     "sbus_param": [1000, 2000, 3000, 4000],
     "sbus_range_min": 172,
     "sbus_range_max": 1811,
+    "chassis_type": 5,
+    "wheel_diameter": 60,
+    "chassis_geo": [100, 200, 450],
+    "chassis_max": [500, 300, 1200],
+    "chassis_accel": [800, 600, 2000],
+    "stall_time_ms": 500,
+    "motor_map": [0, 1, 3, 2],
+    "rc_dir_default": [1, 0, 0, 1],
 }
 raw = md_pack_config(cfg)
-check_eq(len(raw), 231, "pack_config 输出 231B")
+check_eq(len(raw), 248, "pack_config 输出 248B")
 check_eq(raw[:11], b"\x00" * 11, "受保护区（offset 0~10）置 0")
 back = md_parse_config(raw)
 check_eq(back, cfg, "config 全字段往返无损（含位域/float/数组）")
 
-# 8.2 字节级偏移抽查（协议规范 §5）
+# 8.2 字节级偏移抽查（协议规范 §5，布局 v2.x 248B）
 check_eq(raw[11:15], struct.pack("<I", 115200), "@11 baud_rate u32")
 check_eq(raw[15:17], struct.pack("<H", 500), "@15 cmd_timeout_ms u16")
 check_eq(raw[17], 0x12, "@17 comm_flags = protocol2|sbus_inv<<4")
 check_eq(raw[18], 0x49, "@18 control_mode 位域 = 0x49")
 check_eq(raw[19], 0xE4, "@19 motor_invert 位域 = 0xE4")
 check_eq(raw[20:28], struct.pack("<4H", 500, 1000, 2000, 4000), "@20 encoder_cpr")
-check_eq(raw[46:50], struct.pack("<f", 1.5), "@46 speed_kp[0]")
-check_eq(raw[110:118], struct.pack("<4H", 6, 12, 18, 24), "@110 pos_period_ms")
-check_eq(raw[214:216], struct.pack("<H", 0xF630), "@214 sbus_channel_pack 位域")
-check_eq(raw[216:218], struct.pack("<H", 0x012F), "@216 rc_dir_ch 位域")
-check_eq(raw[218], 0xA5, "@218 rc_map_mode/rc_dir_en 位域")
-check_eq(raw[219:227], struct.pack("<4H", 1000, 2000, 3000, 4000), "@219 sbus_param")
-check_eq(raw[227:229], struct.pack("<H", 172), "@227 sbus_range_min")
-check_eq(raw[229:231], struct.pack("<H", 1811), "@229 sbus_range_max")
+check_eq(raw[28:32], struct.pack("<4B", 5, 10, 15, 20), "@28 speed_period_ms u8×4")
+check_eq(raw[42:46], struct.pack("<f", 1.5), "@42 speed_kp[0]")
+check_eq(raw[106:110], struct.pack("<4B", 6, 12, 18, 24), "@106 pos_period_ms u8×4")
+check_eq(raw[206:208], struct.pack("<H", 0xF630), "@206 sbus_channel_pack 位域")
+check_eq(raw[208:210], struct.pack("<H", 0x012F), "@208 rc_dir_ch 位域")
+check_eq(raw[210], 0xA5, "@210 rc_map_mode/rc_dir_en 位域")
+check_eq(raw[211:219], struct.pack("<4H", 1000, 2000, 3000, 4000), "@211 sbus_param")
+check_eq(raw[219:221], struct.pack("<H", 172), "@219 sbus_range_min")
+check_eq(raw[221:223], struct.pack("<H", 1811), "@221 sbus_range_max")
+check_eq(raw[223], 5, "@223 chassis_type")
+check_eq(raw[224:226], struct.pack("<H", 60), "@224 wheel_diameter")
+check_eq(raw[226:232], struct.pack("<3H", 100, 200, 450), "@226 chassis_geo")
+check_eq(raw[232:238], struct.pack("<3H", 500, 300, 1200), "@232 chassis_max")
+check_eq(raw[238:244], struct.pack("<3H", 800, 600, 2000), "@238 chassis_accel")
+check_eq(raw[244:246], struct.pack("<H", 500), "@244 stall_time_ms")
+check_eq(raw[246], 0 | (1 << 2) | (3 << 4) | (2 << 6), "@246 motor_map 位域")
+check_eq(raw[247], 0b1001, "@247 rc_dir_default 位域")
 
 # 8.3 任意 float 的字节级稳定性：pack(parse(pack(d))) == pack(d)
 cfg2 = dict(cfg)
@@ -423,10 +451,12 @@ check_eq(md_pack_config(md_parse_config(raw2)), raw2,
 
 # 8.4 部分字段打包（缺省中性值）与 parse 长度校验
 raw_empty = md_pack_config({})
-check_eq(len(raw_empty), 231, "空 dict 打包 231B")
+check_eq(len(raw_empty), 248, "空 dict 打包 248B")
 check_eq(raw_empty[17], 0x00, "空 dict comm_flags=0")
 check_eq(md_parse_config(raw_empty)["sbus_channel"], [1, 1, 1, 1], "缺省通道=CH1")
-check_raises(ValueError, md_parse_config, raw[:230])          # 长度不符
+check_eq(md_parse_config(raw_empty)["motor_map"], [0, 1, 2, 3], "缺省电机映射=ABCD 顺序(0xE4)")
+check_eq(raw_empty[246], 0xE4, "空 dict motor_map = 固件默认 0xE4")
+check_raises(ValueError, md_parse_config, raw[:247])          # 长度不符
 check_raises(ValueError, md_pack_config, "not-dict")
 check_raises(KeyError, md_pack_config, {"no_such_field": 1})
 
@@ -455,6 +485,7 @@ check_eq(mdc.crc8(b"123456789"), 0xF4, "MDC.crc8")
 check_eq(mdc.build_frame(0x01, b""), b"\xAA\x01\x00\x15", "MDC.build_frame")
 check_eq(mdc.ping(), md_bin_ping(), "MDC.ping")
 check_eq(mdc.motor_ctrl(1, 2, 3, 4), md_bin_motor_ctrl(1, 2, 3, 4), "MDC.motor_ctrl")
+check_eq(mdc.motor_jog(2, 120), md_bin_motor_jog(2, 120), "MDC.motor_jog")
 check_eq(mdc.motor_raw(1, 0, 500), md_bin_motor_raw(1, 0, 500), "MDC.motor_raw")
 check_eq(mdc.mode(1, "speed"), b"/mode 1 speed\n", "MDC.mode")
 check_eq(mdc.enczero(2), b"/enczero 2\n", "MDC.enczero")

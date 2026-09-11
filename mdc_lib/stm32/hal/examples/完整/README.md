@@ -140,7 +140,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 | 文件 | 内容 |
 |------|------|
-| `mdc_lib.c`（内置，本目录） | mdc_lib 实现：CRC8/组帧/帧解析、流式解析器、文本指令层、15 个二进制打包函数、解析层（加入工程即可用） |
+| `mdc_lib.c`（内置，本目录） | mdc_lib 实现：CRC8/组帧/帧解析、流式解析器、文本指令层、16 个二进制打包函数、解析层（加入工程即可用） |
 | `Core/Src/main_example.c` | 集成示例：`uart2_send()`（打包结果 → HAL_UART_Transmit）、`main()` 主循环（订阅 + 50ms 发 0x31 + 0xF0/ACK 打印）、`HAL_UART_RxCpltCallback()`（逐字节喂 `md_parser_feed`） |
 | `mdc_lib.h`（内置，本目录） | mdc_lib 头文件：常量、`md_status_t` / `md_ack_t` / `md_parser_t` 结构体、全部函数声明 |
 

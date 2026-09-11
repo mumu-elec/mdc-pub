@@ -2,7 +2,7 @@
  * @file    mdc_lib.h
  * @brief   Motor Driver Controller 通用调用库（STM32 HAL 平台）
  *
- * 协议依据：协议规范.md（布局 v2.1，config_t = 231B，18 条二进制命令）
+ * 协议依据：协议规范.md（布局 v2.x，config_t = 248B，19 条二进制命令）
  * API 规范：../mdc_lib/API.md（所有平台同一套 md_* 签名）
  *
  * 定位：纯打包 / 纯解析 —— 不 include 任何 HAL 头文件，不碰串口外设。
@@ -32,16 +32,16 @@ extern "C" {
 /* ==================== 常量（API.md §2.5，所有平台一致） ==================== */
 
 #define MD_SYNC         0xAAu    /* 二进制帧同步字 */
-#define MD_MAX_DATA     250u     /* DATA 段最大长度 */
-#define MD_CONFIG_SIZE  231u     /* config_t 大小 */
-#define MD_FRAME_MAX    235u     /* 最大整帧长度（4 + 231） */
+#define MD_MAX_DATA     248u     /* DATA 段最大长度（= config_t 大小） */
+#define MD_CONFIG_SIZE  248u     /* config_t 大小 */
+#define MD_FRAME_MAX    252u     /* 最大整帧长度（4 + 248） */
 #define MD_CRC8_POLY    0x07u    /* CRC8 多项式（初值 0，按位计算） */
 #define MD_CMD_PING     0x01u    /* 连通性测试 */
 #define MD_ERR_OK       0x00u    /* ACK 成功 */
 #define MD_ERR_FAIL     0xFFu    /* ACK 失败 */
 
 /* 二进制命令号（协议规范 §3.3） */
-#define MD_CMD_READ_PARAM    0x10u   /* 读取全部配置（应答 config_t 231B） */
+#define MD_CMD_READ_PARAM    0x10u   /* 读取全部配置（应答 config_t 248B） */
 #define MD_CMD_WRITE_PARAM   0x11u   /* 写入全部配置（仅 RAM） */
 #define MD_CMD_WRITE_FIELD   0x12u   /* 按偏移写入单个字段 */
 #define MD_CMD_SAVE_EEPROM   0x20u   /* RAM → EEPROM */
@@ -49,6 +49,7 @@ extern "C" {
 #define MD_CMD_FACTORY_RESET 0x22u   /* 恢复出厂默认 */
 #define MD_CMD_MOTOR_RAW     0x30u   /* 单通道 PWM 直驱 */
 #define MD_CMD_MOTOR_CTRL    0x31u   /* 四通道批量控制（核心控制帧） */
+#define MD_CMD_MOTOR_JOG     0x32u   /* 单轮点动（仅底盘模式生效，验向用） */
 #define MD_CMD_SUBSCRIBE     0x40u   /* 开启状态周期上报 */
 #define MD_CMD_UNSUBSCRIBE   0x41u   /* 关闭状态上报 */
 #define MD_CMD_DEBUG_SBUS    0x43u   /* SBUS 通道上报开关 */
@@ -59,8 +60,8 @@ extern "C" {
 #define MD_CMD_DETECT_REPORT 0xF1u   /* 协议检测结果上报 */
 #define MD_CMD_SBUS_DATA     0xF2u   /* SBUS 16 通道原始值上报 */
 
-/* 流式解析器缓冲大小（可裁剪；默认 256 可容纳最大帧 235B。
- * 51 等小内存平台可设小，但小于 235 时 READ_PARAM 的 231B 应答帧无法完整解析） */
+/* 流式解析器缓冲大小（可裁剪；默认 256 可容纳最大帧 252B。
+ * 51 等小内存平台可设小，但小于 252 时 READ_PARAM 的 248B 应答帧无法完整解析） */
 #ifndef MD_PARSER_BUF
 #define MD_PARSER_BUF 256u
 #endif
@@ -99,10 +100,11 @@ typedef struct {
     uint8_t err;
 } md_ack_t;
 
-/* config_t 全字段结构（API.md §6.5）。
- * 位域约定：control_mode/motor_invert 每电机 2bit；speed_pid_type/pos_pid_type/
+/* config_t 全字段结构（API.md §6.5，布局 v2.x，248B）。
+ * 位域约定：control_mode/motor_invert/motor_map 每电机 2bit；speed_pid_type/pos_pid_type/
  *           speed_filter_type 每电机 4bit；sbus_channel/rc_dir_ch 存储 1~16（解析 +1 / 打包 -1）；
- *           rc_map_mode 每电机 1bit，rc_dir_en 由同一字节 bit4-7 拆出。 */
+ *           rc_map_mode 每电机 1bit，rc_dir_en 由同一字节 bit4-7 拆出；
+ *           rc_dir_default bit0-3 每通道 1bit（ch4 底盘保留）。 */
 typedef struct {
     /* 通讯 */
     uint32_t baud_rate;          /* @11 USART2 波特率 */
@@ -114,30 +116,39 @@ typedef struct {
     uint8_t  control_mode[4];    /* @18 每电机 2bit: 0开环 1速度 2位置 */
     uint8_t  motor_invert[4];    /* @19 每电机 2bit: bit0引脚反转 bit1编码器极性 */
     uint16_t encoder_cpr[4];     /* @20 编码器线数 */
-    uint16_t speed_period_ms[4]; /* @28 速度环周期 */
-    uint8_t  speed_pid_type[4];  /* @36 每电机 4bit: 0位置式 1增量式 */
-    uint16_t speed_olim[4];      /* @38 速度环输出限幅（PWM 0~1000） */
-    float    speed_kp[4];        /* @46+ 速度环 Kp */
+    uint8_t  speed_period_ms[4]; /* @28 速度环周期（ms，1~255） */
+    uint8_t  speed_pid_type[4];  /* @32 每电机 4bit: 0位置式 1增量式 */
+    uint16_t speed_olim[4];      /* @34 速度环输出限幅（PWM 0~1000） */
+    float    speed_kp[4];        /* @42+ 速度环 Kp */
     float    speed_ki[4];        /*      速度环 Ki */
     float    speed_kd[4];        /*      速度环 Kd */
     float    speed_ilim[4];      /*      速度环积分限幅 */
-    uint16_t pos_period_ms[4];   /* @110 位置环周期 */
-    uint8_t  pos_pid_type[4];    /* @118 每电机 4bit */
-    float    pos_kp[4];          /* @120+ 位置环 Kp */
+    uint8_t  pos_period_ms[4];   /* @106 位置环周期（ms，1~255） */
+    uint8_t  pos_pid_type[4];    /* @110 每电机 4bit */
+    float    pos_kp[4];          /* @112+ 位置环 Kp */
     float    pos_ki[4];          /*      位置环 Ki */
     float    pos_kd[4];          /*      位置环 Kd */
     float    pos_ilim[4];        /*      位置环积分限幅 */
-    float    pos_olim[4];        /* @184 位置环输出限幅（RPM） */
-    uint16_t pos_angle_cpr[4];   /* @200 位置环转一圈脉冲数（0=用 encoder_cpr） */
-    uint8_t  speed_filter_type[4];   /* @208 每电机 4bit: 0无 1滑动平均 2低通 3中值 */
-    uint8_t  speed_filter_window[4]; /* @210 滤波窗口 */
-    uint8_t  sbus_channel[4];    /* @214 遥控通道映射（1~16，打包时 -1 存 0~15） */
-    uint8_t  rc_dir_ch[4];       /* @216 方向映射通道（1~16） */
-    uint8_t  rc_map_mode[4];     /* @218 bit0-3 每电机 1bit: 0中心零点 1min零点 */
-    uint8_t  rc_dir_en[4];       /* @218 bit4-7 每电机 1bit */
-    uint16_t sbus_param[4];      /* @219 遥控行程 */
-    uint16_t sbus_range_min;     /* @227 通道值下边界 */
-    uint16_t sbus_range_max;     /* @229 通道值上边界 */
+    float    pos_olim[4];        /* @176 位置环输出限幅（RPM） */
+    uint16_t pos_angle_cpr[4];   /* @192 位置环转一圈脉冲数（0=用 encoder_cpr） */
+    uint8_t  speed_filter_type[4];   /* @200 每电机 4bit: 0无 1滑动平均 2低通 3中值 */
+    uint8_t  speed_filter_window[4]; /* @202 滤波窗口 */
+    uint8_t  sbus_channel[4];    /* @206 遥控通道映射（1~16，打包时 -1 存 0~15） */
+    uint8_t  rc_dir_ch[4];       /* @208 方向映射通道（1~16） */
+    uint8_t  rc_map_mode[4];     /* @210 bit0-3 每电机 1bit: 0中心零点 1min零点 */
+    uint8_t  rc_dir_en[4];       /* @210 bit4-7 每电机 1bit */
+    uint16_t sbus_param[4];      /* @211 遥控行程 */
+    uint16_t sbus_range_min;     /* @219 通道值下边界 */
+    uint16_t sbus_range_max;     /* @221 通道值上边界 */
+    /* 底盘 ×1（v2.x 新增） */
+    uint8_t  chassis_type;       /* @223 底盘类型（0~6，0=无底盘） */
+    uint16_t wheel_diameter;     /* @224 轮径（mm） */
+    uint16_t chassis_geo[3];     /* @226 底盘几何参数（u16×3） */
+    uint16_t chassis_max[3];     /* @232 底盘限速参数（u16×3） */
+    uint16_t chassis_accel[3];   /* @238 底盘加速度参数（u16×3） */
+    uint16_t stall_time_ms;      /* @244 堵转保护时间（ms） */
+    uint8_t  motor_map[4];       /* @246 每电机 2bit: 电机序号映射 0=A 1=B 2=C 3=D（默认 ABCD） */
+    uint8_t  rc_dir_default[4];  /* @247 bit0-3 每通道 1bit: 遥控方向默认值 */
 } md_config_t;
 
 /* 流式解析器状态（API.md §3.4）。
@@ -170,7 +181,7 @@ int md_parse_frame(const uint8_t* frame, uint16_t len,
 void md_parser_init(md_parser_t* p);
 
 /* 喂一个字节。收到完整且 CRC 通过的一帧时返回 1 并输出 cmd/payload/payload_len，
- * 否则返回 0。滑动窗口自动找 0xAA 同步；LEN>250 或 CRC 失败丢弃重扫。
+ * 否则返回 0。滑动窗口自动找 0xAA 同步；LEN>248 或 CRC 失败丢弃重扫。
  * 注意：payload 指向 p->buf 内部，在下次 feed 之前必须消费（复制出来）。
  * 文本回显行会被当作噪声丢弃（0xAA 前的字节直接忽略）。 */
 int md_parser_feed(md_parser_t* p, uint8_t byte,
@@ -200,7 +211,7 @@ uint16_t md_text_mode(uint8_t ch, const char* mode, char* out, uint16_t cap);
  *   md_text_build("/uart2",     "115200 0 uart", out, cap);
  *   md_text_build("/sbusrange", "172 1811", out, cap); */
 
-/* ==================== 二进制命令层（15 个打包函数） ==================== */
+/* ==================== 二进制命令层（16 个打包函数） ==================== */
 
 uint16_t md_bin_ping(uint8_t* out, uint16_t cap);            /* 0x01 */
 uint16_t md_bin_read_param(uint8_t* out, uint16_t cap);      /* 0x10 */
@@ -214,6 +225,9 @@ uint16_t md_bin_motor_raw(uint8_t ch, uint8_t dir, uint16_t pwm,
                           uint8_t* out, uint16_t cap);       /* 0x30 ch=0~3 dir=0正/1反 pwm=0~1000 */
 uint16_t md_bin_motor_ctrl(int32_t t0, int32_t t1, int32_t t2, int32_t t3,
                            uint8_t* out, uint16_t cap);      /* 0x31 4×int32 LE */
+/* 0x32 单轮点动：DATA=[ch:1B][rpm:int16 LE 有符号]。ch=0~3 物理通道；
+ * 仅底盘模式（chassis_type≠0）生效，rpm=0 清除覆盖，400ms 无刷新自动解除 */
+uint16_t md_bin_motor_jog(uint8_t ch, int16_t rpm, uint8_t* out, uint16_t cap);
 uint16_t md_bin_subscribe(uint16_t interval_ms, uint8_t* out, uint16_t cap); /* 0x40 固件钳位≥20ms */
 uint16_t md_bin_unsubscribe(uint8_t* out, uint16_t cap);     /* 0x41 */
 uint16_t md_bin_debug_sbus(uint8_t enable, uint8_t* out, uint16_t cap);       /* 0x43 */
@@ -237,7 +251,7 @@ int md_parse_detect(const uint8_t* payload, uint16_t len, md_detect_t* out);
 int md_parse_sbus(const uint8_t* payload, uint16_t len, uint16_t ch[16]);
 
 #if MD_ENABLE_CONFIG
-/* config_t（231B raw）↔ md_config_t 全字段解析/打包（含位域），往返无损。
+/* config_t（248B raw）↔ md_config_t 全字段解析/打包（含位域），往返无损。
  * 受保护区（offset 0~10）打包时置 0（固件写入时自动还原） */
 int      md_parse_config(const uint8_t* raw, uint16_t len, md_config_t* out);
 uint16_t md_pack_config(const md_config_t* cfg, uint8_t* out, uint16_t cap);

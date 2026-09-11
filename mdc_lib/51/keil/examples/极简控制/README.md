@@ -39,7 +39,7 @@ send_packed(tx_buf, n);                                   /* 用户实现的串�
 ## 编译与运行
 
 1. 按顶层 `README.md` 的 Keil 工程创建步骤，把本目录 `main.c` + `mdc_lite.c` + `mdc_lib.c` 加入工程，Include Paths 指向本目录。
-2. 工程级 Define 加 `MD_ENABLE_CONFIG=0`（`mdc_lib.c` 编译掉 config 全字段函数与 231B xdata）。
+2. 工程级 Define 加 `MD_ENABLE_CONFIG=0`（`mdc_lib.c` 编译掉 config 全字段函数与 248B xdata）。
 3. 上电后 51 发送订阅帧（可选）与控制帧，控制板按已配置通道模式执行。
 
 ## 与 mdc_lib 的关系

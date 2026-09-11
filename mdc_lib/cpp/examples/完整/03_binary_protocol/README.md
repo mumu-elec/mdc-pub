@@ -5,7 +5,7 @@
 本工程是 **mdc_lib 二进制 API 的完整调用示例**（协议实现全部由库完成）：
 
 - **PING（0x01）**：`mdc::bin_ping()` 打包 → 串口发送 → `mdc::Parser` 流式收帧 → `mdc::parse_ack()` 解析 ACK 结果
-- **READ_PARAM（0x10）**：`mdc::bin_read_param()` 打包发送 → 接收 231B 应答 → `mdc::parse_config()` 解析打印版本与关键字段（含位域，无需手写偏移）
+- **READ_PARAM（0x10）**：`mdc::bin_read_param()` 打包发送 → 接收 248B 应答 → `mdc::parse_config()` 解析打印版本与关键字段（含位域，无需手写偏移）
 - **MOTOR_CTRL（0x31）打包示例**：`mdc::bin_motor_ctrl(t0,t1,t2,t3)` 演示四通道 int32 控制帧打包（仅演示打包，不发送）
 - 版本信息（config_t 头部 offset 0~10 受保护区）按字节显示，config_t 内部 CRC 用 `mdc::crc8()` 校验
 
@@ -14,7 +14,7 @@
 ## 硬件与环境要求
 
 - Motor Driver Controller + USB Type-C，CH340 驱动，**2000000-8N1**
-- 固件 **v1.2.0+**（协议版本 D=2，config_t=231B），与程序协议版本一致
+- 固件 **v1.2.0+**（协议版本 D=2，config_t=248B），与程序协议版本一致
 - C++17 编译器，零第三方依赖
 
 ## 依赖与 mdc_lib
@@ -31,11 +31,11 @@ mdc_lib 是 Motor Driver Controller 的**通用调用库**：二进制协议打�
 | 函数 | 说明 |
 |------|------|
 | `mdc::bin_ping()` | 打包 PING 帧（返回整帧字节 `std::vector<uint8_t>`） |
-| `mdc::bin_read_param()` | 打包 READ_PARAM 帧（应答 config_t 231B） |
+| `mdc::bin_read_param()` | 打包 READ_PARAM 帧（应答 config_t 248B） |
 | `mdc::bin_motor_ctrl(t0,t1,t2,t3)` | 打包 MOTOR_CTRL 帧（4×int32 小端由库处理） |
 | `mdc::Parser::feed(byte)` | 流式解析器：逐字节喂入，收齐一帧且 CRC 通过时返回 `{cmd, payload}` |
 | `mdc::parse_ack(payload, Ack&)` | 解析 ACK 帧 DATA 段（1 字节 err），`Ack::ok()` 判断成功 |
-| `mdc::parse_config(raw231, Config&)` | 解析 231B config_t 为 `mdc::Config` 结构体（含位域） |
+| `mdc::parse_config(raw248, Config&)` | 解析 248B config_t 为 `mdc::Config` 结构体（含位域） |
 | `mdc::crc8(data, len)` | CRC8（多项式 0x07，初值 0） |
 
 实际调用示例（本例程 main.cpp）：
@@ -60,7 +60,7 @@ if (readFrame(sp, parser, 1000, cmd, payload) && cmd == mdc::MD_CMD_PING) {
         std::printf("PING OK\n");              // err=0x00
 }
 
-// ── 2) READ_PARAM：读取 231B 配置并解析 ──
+// ── 2) READ_PARAM：读取 248B 配置并解析 ──
 sp.write(mdc::bin_read_param());
 std::vector<uint8_t> raw;
 if (readFrame(sp, parser, 1000, cmd, raw)
@@ -113,7 +113,7 @@ binary_protocol /dev/ttyUSB0  # Linux
 == PING (0x01) ==
   OK: 设备在线，ACK err=0x00
 == READ_PARAM (0x10) ==
-  收到 231 字节 (期望 231)
+  收到 248 字节 (期望 248)
   前 16 字节 HEX: 00 52 44 4D 01 00 01 02 01 00 3A ...
 == 版本信息 (offset 0~10) ==
   magic      [0-3]  = 00 52 44 4D (正确)
@@ -143,7 +143,7 @@ binary_protocol /dev/ttyUSB0  # Linux
 |------|------|
 | PING 失败 | 确认波特率 2000000-8N1；确认没有其它程序占用串口 |
 | CRC 校验失败 | mdc_lib 已按协议实现 CRC8（多项式 0x07、初值 0、范围 CMD+LEN+DATA）；若仍失败检查固件版本与波特率 |
-| READ_PARAM 返回长度不符 | 固件版本过低（< v1.2.0），config_t 不是 231B |
+| READ_PARAM 返回长度不符 | 固件版本过低（< v1.2.0，旧 v1.1.x 存档线 config_t 为 231B），不是 248B |
 | 版本不匹配 | 固件 SW_MAJOR 必须与程序协议版本 D 一致 |
 
 > 协议细节以 [`common/协议规范.md`](../../../../协议规范.md) 为准。

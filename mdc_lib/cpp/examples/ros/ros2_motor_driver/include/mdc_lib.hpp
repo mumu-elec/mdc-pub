@@ -2,7 +2,7 @@
 // mdc_lib.hpp — Motor Driver Controller 通用调用库（C++17 宿主版）
 // ============================================================================
 // 定位：只负责「打包要发送的数据」与「解析收到的数据」，串口收发由用户自己实现。
-// 协议依据：mdc_lib/API.md（统一 API 规范，权威）+ 协议规范.md（布局 v2.1，config_t=231B）
+// 协议依据：mdc_lib/API.md（统一 API 规范，权威）+ 协议规范.md（布局 v2.x，config_t=248B）
 // 特性：header-only、命名空间 mdc、零第三方依赖（仅标准库）、UTF-8 中文注释。
 //
 // 返回形态约定（与 API.md §2.2/§2.3 语义对齐，本实现选「返回容器」风格）：
@@ -31,16 +31,16 @@ namespace mdc {
 
 // ─────────────────────────── 常量（API.md §2.5） ───────────────────────────
 inline constexpr uint8_t  MD_SYNC        = 0xAA;   // 二进制帧同步字
-inline constexpr uint16_t MD_MAX_DATA    = 250;    // DATA 段最大长度
-inline constexpr uint16_t MD_CONFIG_SIZE = 231;    // config_t 大小
-inline constexpr uint16_t MD_FRAME_MAX   = 235;    // 最大整帧长度（4 + 231）
+inline constexpr uint16_t MD_MAX_DATA    = 248;    // DATA 段最大长度（= config_t 大小）
+inline constexpr uint16_t MD_CONFIG_SIZE = 248;    // config_t 大小
+inline constexpr uint16_t MD_FRAME_MAX   = 252;    // 最大整帧长度（4 + 248）
 inline constexpr uint8_t  MD_CRC8_POLY   = 0x07;   // CRC8 多项式
 inline constexpr uint8_t  MD_CMD_PING    = 0x01;   // 二进制命令号（完整表见下）
 inline constexpr uint8_t  MD_ERR_OK      = 0x00;   // ACK 成功
 inline constexpr uint8_t  MD_ERR_FAIL    = 0xFF;   // ACK 失败
 inline constexpr size_t   MD_PARSER_BUF  = 256;    // 流式解析器缓冲上限（可裁剪，对齐 API.md §3.4）
 
-// ── 二进制命令号（协议规范 §3.3，18 条；PING=0x01 见上方 §2.5 常量） ──
+// ── 二进制命令号（协议规范 §3.3，19 条；PING=0x01 见上方 §2.5 常量） ──
 inline constexpr uint8_t MD_CMD_READ_PARAM    = 0x10;
 inline constexpr uint8_t MD_CMD_WRITE_PARAM   = 0x11;
 inline constexpr uint8_t MD_CMD_WRITE_FIELD   = 0x12;
@@ -49,6 +49,7 @@ inline constexpr uint8_t MD_CMD_LOAD_EEPROM   = 0x21;
 inline constexpr uint8_t MD_CMD_FACTORY_RESET = 0x22;
 inline constexpr uint8_t MD_CMD_MOTOR_RAW     = 0x30;
 inline constexpr uint8_t MD_CMD_MOTOR_CTRL    = 0x31;
+inline constexpr uint8_t MD_CMD_MOTOR_JOG     = 0x32;  // 单轮点动（仅底盘模式，验向用）
 inline constexpr uint8_t MD_CMD_SUBSCRIBE     = 0x40;
 inline constexpr uint8_t MD_CMD_UNSUBSCRIBE   = 0x41;
 inline constexpr uint8_t MD_CMD_DEBUG_SBUS    = 0x43;
@@ -144,11 +145,11 @@ inline uint8_t crc8(const std::vector<uint8_t>& data) {
 
 // ============================================================================
 // §3.2 组帧 —— [0xAA][CMD][LEN][DATA...][CRC8]
-// CRC 计算范围 = CMD+LEN+DATA（不含 SYNC）；DATA 超 250B 抛 std::invalid_argument
+// CRC 计算范围 = CMD+LEN+DATA（不含 SYNC）；DATA 超 248B 抛 std::invalid_argument
 // ============================================================================
 inline std::vector<uint8_t> build_frame(uint8_t cmd, const std::vector<uint8_t>& data) {
     if (data.size() > MD_MAX_DATA)
-        throw std::invalid_argument("mdc::build_frame: DATA 长度超过上限 250B");
+        throw std::invalid_argument("mdc::build_frame: DATA 长度超过上限 248B");
     std::vector<uint8_t> frame;
     frame.reserve(3 + data.size() + 1);
     frame.push_back(MD_SYNC);
@@ -194,12 +195,12 @@ inline Frame parse_frame(const std::vector<uint8_t>& frame) {
 }
 
 // ============================================================================
-// §3.4 流式解析器 —— 逐字节喂入，滑动窗口找 0xAA + CRC 校验 + LEN>250 防护
+// §3.4 流式解析器 —— 逐字节喂入，滑动窗口找 0xAA + CRC 校验 + LEN>248 防护
 // 文本回显等噪声字节会在 0xAA 之前被丢弃；坏 CRC 帧丢弃该 0xAA 后继续重扫。
 // ============================================================================
 class Parser {
 public:
-    // max_data：DATA 段长度上限（默认 250；小内存平台可调小）
+    // max_data：DATA 段长度上限（默认 248；小内存平台可调小）
     explicit Parser(size_t max_data = MD_MAX_DATA) : max_data_(max_data) {}
 
     // 清空内部缓冲（切换连接 / 重新同步时调用）
@@ -233,7 +234,7 @@ private:
             // 2) 至少需要 CMD+LEN 才能继续
             if (buf_.size() < 3) return std::nullopt;
             const size_t ln = buf_[2];
-            // 3) LEN>250 非法：丢弃该 0xAA，重扫
+            // 3) LEN>248 非法：丢弃该 0xAA，重扫
             if (ln > max_data_) { buf_.erase(buf_.begin()); continue; }
             const size_t fsize = 3 + ln + 1;             // CMD+LEN+DATA+CRC
             if (buf_.size() < fsize) return std::nullopt; // 未收全，继续等待
@@ -305,7 +306,7 @@ inline std::string text_mode(uint8_t ch, const std::string& mode) {
 //   text_build("/sbusrange", "172 1811")
 
 // ============================================================================
-// §5 二进制命令层（15 个打包函数，返回整帧字节）
+// §5 二进制命令层（16 个打包函数，返回整帧字节）
 // ============================================================================
 
 // 0x01 PING —— 连通性测试（无 DATA）
@@ -314,21 +315,21 @@ inline std::vector<uint8_t> bin_ping() { return build_frame(MD_CMD_PING); }
 // 0x10 READ_PARAM —— 读取全部配置（无 DATA）
 inline std::vector<uint8_t> bin_read_param() { return build_frame(MD_CMD_READ_PARAM); }
 
-// 0x11 WRITE_PARAM —— 写入全部配置（DATA = config_t 231B，仅 RAM）
+// 0x11 WRITE_PARAM —— 写入全部配置（DATA = config_t 248B，仅 RAM）
 // 便捷重载 bin_write_param(const Config&) 见 §6.5（依赖 Config 声明）
 inline std::vector<uint8_t> bin_write_param(const std::vector<uint8_t>& cfg) {
     if (cfg.size() != MD_CONFIG_SIZE)
-        throw std::invalid_argument("mdc::bin_write_param: config_t 必须为 231B");
+        throw std::invalid_argument("mdc::bin_write_param: config_t 必须为 248B");
     return build_frame(MD_CMD_WRITE_PARAM, cfg);
 }
 
 // 0x12 WRITE_FIELD —— 按偏移写单个字段 [field_id:2B LE][value:nB]
-// 协议规范：offset < 12（受保护区）拒绝写入
+// 协议规范：offset < 11（受保护区，写入返回 ACK 0x02）拒绝写入
 inline std::vector<uint8_t> bin_write_field(uint16_t field_id,
                                             const std::vector<uint8_t>& value) {
-    if (field_id < 12)
+    if (field_id < 11)
         throw std::invalid_argument(
-            "mdc::bin_write_field: 受保护区 (offset<12) 不可写入");
+            "mdc::bin_write_field: 受保护区 (offset<11) 不可写入");
     std::vector<uint8_t> data;
     data.reserve(2 + value.size());
     detail::wr_u16_append(data, field_id);
@@ -372,6 +373,18 @@ inline std::vector<uint8_t> bin_motor_ctrl(int32_t t0, int32_t t1,
     detail::wr_i32_append(data, t2);
     detail::wr_i32_append(data, t3);
     return build_frame(MD_CMD_MOTOR_CTRL, data);
+}
+
+// 0x32 MOTOR_JOG —— [ch:1B][rpm:2B LE 有符号]（单轮点动，仅底盘模式生效，验向用）
+// ch=0~3 物理通道；rpm 有符号 int16；rpm=0 清除覆盖，400ms 无刷新自动解除；
+// 非底盘模式下本帧被固件忽略。
+// 验证向量：bin_motor_jog(1, -300) 的 DATA 段 == 01 D4 FE
+inline std::vector<uint8_t> bin_motor_jog(uint8_t ch, int16_t rpm) {
+    if (ch > 3)
+        throw std::invalid_argument("mdc::bin_motor_jog: ch 取值 0~3");
+    std::vector<uint8_t> data{ch};
+    detail::wr_u16_append(data, static_cast<uint16_t>(rpm));   // 补码位模式直接写入
+    return build_frame(MD_CMD_MOTOR_JOG, data);
 }
 
 // 0x40 SUBSCRIBE —— [interval_ms:2B LE]（固件钳位 ≥20ms）
@@ -515,33 +528,42 @@ struct Config {
     std::array<uint8_t, 4>  control_mode{};       // @18 每电机2bit: 0开环 1速度 2位置
     std::array<uint8_t, 4>  motor_invert{};       // @19 每电机2bit: bit0引脚反转 bit1编码器极性
     std::array<uint16_t, 4> encoder_cpr{};        // @20 编码器线数
-    std::array<uint16_t, 4> speed_period_ms{};    // @28 速度环周期（ms）
-    std::array<uint8_t, 4>  speed_pid_type{};     // @36 每电机4bit: 0位置式 1增量式
-    std::array<uint16_t, 4> speed_olim{};         // @38 速度环输出限幅（PWM 0~1000）
-    std::array<float, 4>    speed_kp{};           // @46 速度环 Kp
+    std::array<uint8_t, 4>  speed_period_ms{};    // @28 速度环周期（ms，v2.x 压缩为 u8）
+    std::array<uint8_t, 4>  speed_pid_type{};     // @32 每电机4bit: 0位置式 1增量式
+    std::array<uint16_t, 4> speed_olim{};         // @34 速度环输出限幅（PWM 0~1000）
+    std::array<float, 4>    speed_kp{};           // @42 速度环 Kp
     std::array<float, 4>    speed_ki{};           //     Ki
     std::array<float, 4>    speed_kd{};           //     Kd
     std::array<float, 4>    speed_ilim{};         //     Ilim（积分限幅）
-    std::array<uint16_t, 4> pos_period_ms{};      // @110 位置环周期（ms）
-    std::array<uint8_t, 4>  pos_pid_type{};       // @118 每电机4bit
-    std::array<float, 4>    pos_kp{};             // @120 位置环 Kp
+    std::array<uint8_t, 4>  pos_period_ms{};      // @106 位置环周期（ms，v2.x 压缩为 u8）
+    std::array<uint8_t, 4>  pos_pid_type{};       // @110 每电机4bit
+    std::array<float, 4>    pos_kp{};             // @112 位置环 Kp
     std::array<float, 4>    pos_ki{};             //     Ki
     std::array<float, 4>    pos_kd{};             //     Kd
     std::array<float, 4>    pos_ilim{};           //     Ilim
-    std::array<float, 4>    pos_olim{};           // @184 位置环输出限幅（RPM）
-    std::array<uint16_t, 4> pos_angle_cpr{};      // @200 位置环转一圈脉冲数（0=用 encoder_cpr）
-    std::array<uint8_t, 4>  speed_filter_type{};  // @208 每电机4bit: 0无 1滑动平均 2低通 3中值
-    std::array<uint8_t, 4>  speed_filter_window{};// @210 滤波窗口
-    std::array<uint8_t, 4>  sbus_channel{};       // @214 遥控通道映射：结构体用 1~16（CH1~16）
-    std::array<uint8_t, 4>  rc_dir_ch{};          // @216 方向映射通道：结构体用 1~16
-    std::array<uint8_t, 4>  rc_map_mode{};        // @218 bit0-3 每电机1bit: 0中心零点 1min零点
-    std::array<uint8_t, 4>  rc_dir_en{};          // @218 bit4-7 每电机1bit: 方向映射使能
-    std::array<uint16_t, 4> sbus_param{};         // @219 遥控行程
-    uint16_t sbus_range_min = 0;                  // @227 通道值下边界
-    uint16_t sbus_range_max = 0;                  // @229 通道值上边界
+    std::array<float, 4>    pos_olim{};           // @176 位置环输出限幅（RPM）
+    std::array<uint16_t, 4> pos_angle_cpr{};      // @192 位置环转一圈脉冲数（0=用 encoder_cpr）
+    std::array<uint8_t, 4>  speed_filter_type{};  // @200 每电机4bit: 0无 1滑动平均 2低通 3中值
+    std::array<uint8_t, 4>  speed_filter_window{};// @202 滤波窗口
+    std::array<uint8_t, 4>  sbus_channel{};       // @206 遥控通道映射：结构体用 1~16（CH1~16）
+    std::array<uint8_t, 4>  rc_dir_ch{};          // @208 方向映射通道：结构体用 1~16
+    std::array<uint8_t, 4>  rc_map_mode{};        // @210 bit0-3 每电机1bit: 0中心零点 1min零点
+    std::array<uint8_t, 4>  rc_dir_en{};          // @210 bit4-7 每电机1bit: 方向映射使能
+    std::array<uint16_t, 4> sbus_param{};         // @211 遥控行程
+    uint16_t sbus_range_min = 0;                  // @219 通道值下边界
+    uint16_t sbus_range_max = 0;                  // @221 通道值上边界
+    /* ── 底盘（v2.x 新增） ── */
+    uint8_t  chassis_type = 0;                    // @223 底盘类型（0~6，0=非底盘）
+    uint16_t wheel_diameter = 0;                  // @224 轮径（mm）
+    std::array<uint16_t, 3> chassis_geo{};        // @226 底盘几何参数（u16×3）
+    std::array<uint16_t, 3> chassis_max{};        // @232 底盘最大值（u16×3）
+    std::array<uint16_t, 3> chassis_accel{};      // @238 底盘加速度（u16×3）
+    uint16_t stall_time_ms = 0;                   // @244 堵转保护时间（ms）
+    std::array<uint8_t, 4>  motor_map{0, 1, 2, 3}; // @246 每电机2bit: 0=A 1=B 2=C 3=D（默认 ABCD=0xE4）
+    std::array<uint8_t, 4>  rc_dir_default{};     // @247 bit0-3 每通道1bit 方向默认值
 };
 
-// 解析 231B config_t → Config（失败返回 false，输出参数不变）
+// 解析 248B config_t → Config（失败返回 false，输出参数不变）
 inline bool parse_config(const uint8_t* raw, size_t len, Config& out) {
     if (raw == nullptr || len != MD_CONFIG_SIZE) return false;
     Config c;
@@ -556,33 +578,33 @@ inline bool parse_config(const uint8_t* raw, size_t len, Config& out) {
         c.control_mode[ci] = static_cast<uint8_t>((raw[18] >> (i * 2)) & 0x03);
         c.motor_invert[ci] = static_cast<uint8_t>((raw[19] >> (i * 2)) & 0x03);
         c.encoder_cpr[ci]     = detail::rd_u16(raw + 20  + i * 2);
-        c.speed_period_ms[ci] = detail::rd_u16(raw + 28  + i * 2);
-        c.speed_olim[ci]      = detail::rd_u16(raw + 38  + i * 2);
-        c.speed_kp[ci]    = detail::rd_f32(raw + 46 + i * 16 + 0);
-        c.speed_ki[ci]    = detail::rd_f32(raw + 46 + i * 16 + 4);
-        c.speed_kd[ci]    = detail::rd_f32(raw + 46 + i * 16 + 8);
-        c.speed_ilim[ci]  = detail::rd_f32(raw + 46 + i * 16 + 12);
-        c.pos_period_ms[ci] = detail::rd_u16(raw + 110 + i * 2);
-        c.pos_kp[ci]    = detail::rd_f32(raw + 120 + i * 16 + 0);
-        c.pos_ki[ci]    = detail::rd_f32(raw + 120 + i * 16 + 4);
-        c.pos_kd[ci]    = detail::rd_f32(raw + 120 + i * 16 + 8);
-        c.pos_ilim[ci]  = detail::rd_f32(raw + 120 + i * 16 + 12);
-        c.pos_olim[ci]      = detail::rd_f32(raw + 184 + i * 4);
-        c.pos_angle_cpr[ci] = detail::rd_u16(raw + 200 + i * 2);
-        c.speed_filter_window[ci] = raw[210 + i];
+        c.speed_period_ms[ci] = raw[28 + i];                    // v2.x: u8×4
+        c.speed_olim[ci]      = detail::rd_u16(raw + 34  + i * 2);
+        c.speed_kp[ci]    = detail::rd_f32(raw + 42 + i * 16 + 0);
+        c.speed_ki[ci]    = detail::rd_f32(raw + 42 + i * 16 + 4);
+        c.speed_kd[ci]    = detail::rd_f32(raw + 42 + i * 16 + 8);
+        c.speed_ilim[ci]  = detail::rd_f32(raw + 42 + i * 16 + 12);
+        c.pos_period_ms[ci] = raw[106 + i];                     // v2.x: u8×4
+        c.pos_kp[ci]    = detail::rd_f32(raw + 112 + i * 16 + 0);
+        c.pos_ki[ci]    = detail::rd_f32(raw + 112 + i * 16 + 4);
+        c.pos_kd[ci]    = detail::rd_f32(raw + 112 + i * 16 + 8);
+        c.pos_ilim[ci]  = detail::rd_f32(raw + 112 + i * 16 + 12);
+        c.pos_olim[ci]      = detail::rd_f32(raw + 176 + i * 4);
+        c.pos_angle_cpr[ci] = detail::rd_u16(raw + 192 + i * 2);
+        c.speed_filter_window[ci] = raw[202 + i];
         // sbus_channel/rc_dir_ch：存储值 0~15 = CH1~16，结构体用 1~16（解析 +1）
         c.sbus_channel[ci] = static_cast<uint8_t>(
-            ((detail::rd_u16(raw + 214) >> (i * 4)) & 0x0F) + 1);
+            ((detail::rd_u16(raw + 206) >> (i * 4)) & 0x0F) + 1);
         c.rc_dir_ch[ci] = static_cast<uint8_t>(
-            ((detail::rd_u16(raw + 216) >> (i * 4)) & 0x0F) + 1);
-        c.rc_map_mode[ci] = static_cast<uint8_t>((raw[218] >> i) & 0x01);
-        c.rc_dir_en[ci]   = static_cast<uint8_t>((raw[218] >> (4 + i)) & 0x01);
-        c.sbus_param[ci]  = detail::rd_u16(raw + 219 + i * 2);
+            ((detail::rd_u16(raw + 208) >> (i * 4)) & 0x0F) + 1);
+        c.rc_map_mode[ci] = static_cast<uint8_t>((raw[210] >> i) & 0x01);
+        c.rc_dir_en[ci]   = static_cast<uint8_t>((raw[210] >> (4 + i)) & 0x01);
+        c.sbus_param[ci]  = detail::rd_u16(raw + 211 + i * 2);
     }
     // 每电机 4bit 打包字段（u16）
-    const uint16_t spd_type = detail::rd_u16(raw + 36);
-    const uint16_t pos_type = detail::rd_u16(raw + 118);
-    const uint16_t flt_type = detail::rd_u16(raw + 208);
+    const uint16_t spd_type = detail::rd_u16(raw + 32);
+    const uint16_t pos_type = detail::rd_u16(raw + 110);
+    const uint16_t flt_type = detail::rd_u16(raw + 200);
     for (int i = 0; i < 4; ++i) {
         c.speed_pid_type[static_cast<size_t>(i)] =
             static_cast<uint8_t>((spd_type >> (i * 4)) & 0x0F);
@@ -591,8 +613,24 @@ inline bool parse_config(const uint8_t* raw, size_t len, Config& out) {
         c.speed_filter_type[static_cast<size_t>(i)] =
             static_cast<uint8_t>((flt_type >> (i * 4)) & 0x0F);
     }
-    c.sbus_range_min = detail::rd_u16(raw + 227);
-    c.sbus_range_max = detail::rd_u16(raw + 229);
+    c.sbus_range_min = detail::rd_u16(raw + 219);
+    c.sbus_range_max = detail::rd_u16(raw + 221);
+    /* ── 底盘（v2.x 新增，offset 223~247） ── */
+    c.chassis_type   = raw[223];
+    c.wheel_diameter = detail::rd_u16(raw + 224);
+    for (int i = 0; i < 3; ++i) {
+        const size_t ci = static_cast<size_t>(i);
+        c.chassis_geo[ci]   = detail::rd_u16(raw + 226 + i * 2);
+        c.chassis_max[ci]   = detail::rd_u16(raw + 232 + i * 2);
+        c.chassis_accel[ci] = detail::rd_u16(raw + 238 + i * 2);
+    }
+    c.stall_time_ms = detail::rd_u16(raw + 244);
+    for (int i = 0; i < 4; ++i) {
+        c.motor_map[static_cast<size_t>(i)] =
+            static_cast<uint8_t>((raw[246] >> (i * 2)) & 0x03);
+        c.rc_dir_default[static_cast<size_t>(i)] =
+            static_cast<uint8_t>((raw[247] >> i) & 0x01);
+    }
     out = c;
     return true;
 }
@@ -600,7 +638,7 @@ inline bool parse_config(const std::vector<uint8_t>& raw, Config& out) {
     return parse_config(raw.data(), raw.size(), out);
 }
 
-// 打包 Config → 231B config_t（受保护区 offset 0~10 置 0，固件写入时自动还原）
+// 打包 Config → 248B config_t（受保护区 offset 0~10 置 0，固件写入时自动还原）
 inline std::vector<uint8_t> pack_config(const Config& cfg) {
     std::vector<uint8_t> raw(MD_CONFIG_SIZE, 0);     // 受保护区全部置 0
     detail::wr_u32(raw, 11, cfg.baud_rate);
@@ -629,11 +667,11 @@ inline std::vector<uint8_t> pack_config(const Config& cfg) {
         sbus_ch = static_cast<uint16_t>(sbus_ch | (((cfg.sbus_channel[static_cast<size_t>(i)] - 1) & 0x0F) << (i * 4)));
         rc_dir  = static_cast<uint16_t>(rc_dir  | (((cfg.rc_dir_ch[static_cast<size_t>(i)] - 1) & 0x0F) << (i * 4)));
     }
-    detail::wr_u16(raw, 36,  spd_type);
-    detail::wr_u16(raw, 118, pos_type);
-    detail::wr_u16(raw, 208, flt_type);
-    detail::wr_u16(raw, 214, sbus_ch);
-    detail::wr_u16(raw, 216, rc_dir);
+    detail::wr_u16(raw, 32,  spd_type);
+    detail::wr_u16(raw, 110, pos_type);
+    detail::wr_u16(raw, 200, flt_type);
+    detail::wr_u16(raw, 206, sbus_ch);
+    detail::wr_u16(raw, 208, rc_dir);
     // rc_map_mode：低4bit=映射模式，高4bit=方向映射使能
     uint8_t rmm = 0;
     for (int i = 0; i < 4; ++i) {
@@ -641,29 +679,47 @@ inline std::vector<uint8_t> pack_config(const Config& cfg) {
             ((cfg.rc_map_mode[static_cast<size_t>(i)] & 0x01) << i) |
             ((cfg.rc_dir_en[static_cast<size_t>(i)] & 0x01) << (4 + i)));
     }
-    raw[218] = rmm;
+    raw[210] = rmm;
     // 逐通道数组字段
     for (int i = 0; i < 4; ++i) {
         const size_t ci = static_cast<size_t>(i);
         detail::wr_u16(raw, 20  + i * 2, cfg.encoder_cpr[ci]);
-        detail::wr_u16(raw, 28  + i * 2, cfg.speed_period_ms[ci]);
-        detail::wr_u16(raw, 38  + i * 2, cfg.speed_olim[ci]);
-        detail::wr_f32(raw, 46 + i * 16 + 0,  cfg.speed_kp[ci]);
-        detail::wr_f32(raw, 46 + i * 16 + 4,  cfg.speed_ki[ci]);
-        detail::wr_f32(raw, 46 + i * 16 + 8,  cfg.speed_kd[ci]);
-        detail::wr_f32(raw, 46 + i * 16 + 12, cfg.speed_ilim[ci]);
-        detail::wr_u16(raw, 110 + i * 2, cfg.pos_period_ms[ci]);
-        detail::wr_f32(raw, 120 + i * 16 + 0,  cfg.pos_kp[ci]);
-        detail::wr_f32(raw, 120 + i * 16 + 4,  cfg.pos_ki[ci]);
-        detail::wr_f32(raw, 120 + i * 16 + 8,  cfg.pos_kd[ci]);
-        detail::wr_f32(raw, 120 + i * 16 + 12, cfg.pos_ilim[ci]);
-        detail::wr_f32(raw, 184 + i * 4, cfg.pos_olim[ci]);
-        detail::wr_u16(raw, 200 + i * 2, cfg.pos_angle_cpr[ci]);
-        raw[210 + i] = cfg.speed_filter_window[ci];
-        detail::wr_u16(raw, 219 + i * 2, cfg.sbus_param[ci]);
+        raw[28 + i] = cfg.speed_period_ms[ci];                  // v2.x: u8×4
+        detail::wr_u16(raw, 34  + i * 2, cfg.speed_olim[ci]);
+        detail::wr_f32(raw, 42 + i * 16 + 0,  cfg.speed_kp[ci]);
+        detail::wr_f32(raw, 42 + i * 16 + 4,  cfg.speed_ki[ci]);
+        detail::wr_f32(raw, 42 + i * 16 + 8,  cfg.speed_kd[ci]);
+        detail::wr_f32(raw, 42 + i * 16 + 12, cfg.speed_ilim[ci]);
+        raw[106 + i] = cfg.pos_period_ms[ci];                   // v2.x: u8×4
+        detail::wr_f32(raw, 112 + i * 16 + 0,  cfg.pos_kp[ci]);
+        detail::wr_f32(raw, 112 + i * 16 + 4,  cfg.pos_ki[ci]);
+        detail::wr_f32(raw, 112 + i * 16 + 8,  cfg.pos_kd[ci]);
+        detail::wr_f32(raw, 112 + i * 16 + 12, cfg.pos_ilim[ci]);
+        detail::wr_f32(raw, 176 + i * 4, cfg.pos_olim[ci]);
+        detail::wr_u16(raw, 192 + i * 2, cfg.pos_angle_cpr[ci]);
+        raw[202 + i] = cfg.speed_filter_window[ci];
+        detail::wr_u16(raw, 211 + i * 2, cfg.sbus_param[ci]);
     }
-    detail::wr_u16(raw, 227, cfg.sbus_range_min);
-    detail::wr_u16(raw, 229, cfg.sbus_range_max);
+    detail::wr_u16(raw, 219, cfg.sbus_range_min);
+    detail::wr_u16(raw, 221, cfg.sbus_range_max);
+    /* ── 底盘（v2.x 新增，offset 223~247） ── */
+    raw[223] = cfg.chassis_type;
+    detail::wr_u16(raw, 224, cfg.wheel_diameter);
+    for (int i = 0; i < 3; ++i) {
+        const size_t ci = static_cast<size_t>(i);
+        detail::wr_u16(raw, 226 + i * 2, cfg.chassis_geo[ci]);
+        detail::wr_u16(raw, 232 + i * 2, cfg.chassis_max[ci]);
+        detail::wr_u16(raw, 238 + i * 2, cfg.chassis_accel[ci]);
+    }
+    detail::wr_u16(raw, 244, cfg.stall_time_ms);
+    // motor_map：每电机 2bit（0=A 1=B 2=C 3=D），默认 ABCD 顺序 → 0xE4
+    uint8_t mm = 0, rdd = 0;
+    for (int i = 0; i < 4; ++i) {
+        mm  = static_cast<uint8_t>(mm  | ((cfg.motor_map[static_cast<size_t>(i)] & 0x03) << (i * 2)));
+        rdd = static_cast<uint8_t>(rdd | ((cfg.rc_dir_default[static_cast<size_t>(i)] & 0x01) << i));
+    }
+    raw[246] = mm;
+    raw[247] = rdd;
     return raw;
 }
 

@@ -79,8 +79,8 @@
     '.fnote{font-size:12.5px;color:var(--muted)}',
     '.fdate{font-size:12.5px;color:var(--muted);font-family:Consolas,monospace;white-space:nowrap}',
     '.c-op{text-align:right}',
-    '.ibtn{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;font-size:12px;',
-    'color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);text-decoration:none;flex-shrink:0}',
+    '.ibtn{display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:6px;font-size:12px;',
+    'color:var(--accent);text-decoration:none;flex-shrink:0}',
     '.ibtn .ic{width:13px;height:13px}',
     '.ibtn:hover{background:color-mix(in srgb,var(--accent) 12%,transparent);text-decoration:none}',
     '.subhd{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.5px;margin:14px 0 8px}',
@@ -115,6 +115,7 @@
     '<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>'+
     '<symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></symbol>'+
     '<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></symbol>'+
+    '<symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>'+
     '<symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>'+
     '<symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></symbol>'+
     '<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>'+
@@ -220,8 +221,10 @@
     if(rs.length){
       html+='<ul class="plain">';
       rs.forEach(function(r){
-        html+='<li>'+ic('file')+'<span>'+
-          (r.href?'<a href="'+esc(r.href)+'">'+esc(r.name)+'</a>':'<b>'+esc(r.name)+'</b>')+'</span>'+
+        var ext=!!(r.href&&/^https?:/i.test(r.href));
+        var folder=/github\.com\/[^/]+\/[^/]+\/tree\//.test(String(r.href||'').toLowerCase());
+        html+='<li>'+ic(folder?'folder':'file')+'<span>'+
+          (r.href?'<a href="'+esc(r.href)+'"'+(ext?' target="_blank" rel="noopener"':'')+'>'+esc(r.name)+'</a>':'<b>'+esc(r.name)+'</b>')+'</span>'+
           (r.note?'<span class="rnote">— '+esc(r.note)+'</span>':'')+'</li>';
       });
       html+='</ul>';

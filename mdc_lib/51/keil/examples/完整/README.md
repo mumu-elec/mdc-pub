@@ -49,12 +49,12 @@ n = md_bin_motor_ctrl(400L, -400L, 0L, 0L, tx_buf, sizeof(tx_buf));
 send_packed(tx_buf, n);
 ```
 
-如需解析控制板推送的二进制上报帧（如 0xF0 状态帧），在 `main.c` 顶部声明 `xdata md_parser_t g_parser;`，在 UART 中断里逐字节喂 `md_parser_feed()`，返回 1 时用 `md_parse_status()` 解析（`payload` 在下次 feed 前有效）。解析器缓冲默认 256B 需放 xdata，且 `MD_PARSER_BUF` 小于 235 时无法完整解析 READ_PARAM 的 231B 应答。**若只想要「发控制 + 收转速」的极简流程，直接用 [`../极简控制/`](../极简控制/) 或 [`../控制+回调/`](../控制+回调/)。**
+如需解析控制板推送的二进制上报帧（如 0xF0 状态帧），在 `main.c` 顶部声明 `xdata md_parser_t g_parser;`，在 UART 中断里逐字节喂 `md_parser_feed()`，返回 1 时用 `md_parse_status()` 解析（`payload` 在下次 feed 前有效）。解析器缓冲默认 256B 需放 xdata，且 `MD_PARSER_BUF` 小于 252 时无法完整解析 READ_PARAM 的 248B 应答。**若只想要「发控制 + 收转速」的极简流程，直接用 [`../极简控制/`](../极简控制/) 或 [`../控制+回调/`](../控制+回调/)。**
 
 ## 编译与运行
 
 1. 按顶层 `README.md` 的 Keil 工程创建步骤，把本目录 `main.c` 与 `mdc_lib.c` 加入工程，Include Paths 指向本目录。
-2. （推荐）工程级 Define 加 `MD_ENABLE_CONFIG=0`：本例程不用 config 全字段函数，这样 `mdc_lib.c` 会编译掉 `md_pack_config` / `md_parse_config` / `md_bin_write_param` 及 231B 的 xdata 缓冲，省 RAM/代码空间。
+2. （推荐）工程级 Define 加 `MD_ENABLE_CONFIG=0`：本例程不用 config 全字段函数，这样 `mdc_lib.c` 会编译掉 `md_pack_config` / `md_parse_config` / `md_bin_write_param` 及 248B 的 xdata 缓冲，省 RAM/代码空间。
 3. 上电后 51 发送 4 条演示文本指令，控制板应答会回显到 51 的 RXD。
 4. **开启 0x31 控制帧演示**：把 `main.c` 顶部 `#define SEND_CTRL_FRAME 0` 改为 `1`，重新编译烧录。
 5. 主循环把收到的完整行转发到 RC 口（透传）：用 USB-TTL 转接临时接 51 的 UART，PC 串口工具输入 `/status` 回车，51 转发给控制板。

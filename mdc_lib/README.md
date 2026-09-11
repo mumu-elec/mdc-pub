@@ -1,7 +1,8 @@
 # mdc_lib — Motor Driver Controller 通用调用库
 
 > **定位：** 通用调用库 —— 用函数封装指令，**返回要发送的字节**；并提供**接收数据解析**。串口收发由用户自己实现。
-> **协议依据：** [`协议规范.md`](协议规范.md)（布局 v2.1，config_t=231B）
+> **协议依据：** [`协议规范.md`](协议规范.md)（布局 v2.x，config_t=248B）
+> **版本注记：** **mdc_lib v2.0（2026-09-12 与固件 v1.2.0 / 协议 D=2 的 248B 布局对齐；此前 231B 版本仅适配 v1.1.x 存档线）**
 > **API 规范：** [`API.md`](API.md)（所有平台实现的唯一依据，同一套 `md_*` 签名）
 
 ---
@@ -72,7 +73,7 @@ Serial2.write(buf, n);                          // 用户实现串口
 
 - **底层**：`md_crc8` / `md_build_frame` / `md_parse_frame` / 流式解析器 `md_parser_feed`
 - **文本指令**：`md_text_build(cmd, args)` + 10 个便捷封装（version/help/status/check/detect/save/load/reset/enczero/mode）
-- **二进制命令**（15 个）：`md_bin_ping / read_param / write_param / write_field / save / load / factory_reset / motor_raw / motor_ctrl / subscribe / unsubscribe / debug_sbus / debug_speed / enter_bl / reboot`
+- **二进制命令**（16 个）：`md_bin_ping / read_param / write_param / write_field / save / load / factory_reset / motor_raw / motor_ctrl / motor_jog / subscribe / unsubscribe / debug_sbus / debug_speed / enter_bl / reboot`
 - **解析**（5 个）：`md_parse_ack / status / detect / sbus / config` + `md_pack_config`
 
 > 完整签名、字节布局、验证向量见 [`API.md`](API.md)。

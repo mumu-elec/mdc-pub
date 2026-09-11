@@ -40,7 +40,7 @@
 /* ==================== 极简协议常量（与 mdc_lib / API.md / 协议规范一致） ==================== */
 
 #define MD_SYNC              0xAAu   /* 二进制帧同步字 */
-#define MD_MAX_DATA          250u    /* DATA 段最大长度 */
+#define MD_MAX_DATA          248u    /* DATA 段最大长度 */
 #define MD_CRC8_POLY         0x07u   /* CRC8 多项式（初值 0，按位计算，CRC8-ATM） */
 
 #define MD_CMD_MOTOR_CTRL    0x31u   /* 四通道批量控制（核心控制帧） */

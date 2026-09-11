@@ -31,7 +31,7 @@ namespace mdc_lite {
 
 // ── 常量（帧格式约定）──
 inline constexpr uint8_t  MD_SYNC      = 0xAA;   // 二进制帧同步字
-inline constexpr uint16_t MD_MAX_DATA  = 250;    // DATA 段最大长度
+inline constexpr uint16_t MD_MAX_DATA  = 248;    // DATA 段最大长度
 inline constexpr uint8_t  MD_CRC8_POLY = 0x07;   // CRC8 多项式（初值 0）
 inline constexpr uint8_t  MD_CMD_MOTOR_CTRL    = 0x31;   // 四通道控制
 inline constexpr uint8_t  MD_CMD_SUBSCRIBE     = 0x40;   // 订阅状态上报
@@ -57,7 +57,7 @@ inline uint8_t crc8(const std::vector<uint8_t>& data) {
 
 // ============================================================================
 // build_frame —— 组帧 [0xAA][CMD][LEN][DATA...][CRC8]
-// CRC 计算范围 = CMD+LEN+DATA（不含 SYNC）。DATA 由 LEN(1B) 编码，上限 250B。
+// CRC 计算范围 = CMD+LEN+DATA（不含 SYNC）。DATA 由 LEN(1B) 编码，上限 248B。
 // ============================================================================
 inline std::vector<uint8_t> build_frame(uint8_t cmd, const std::vector<uint8_t>& data) {
     std::vector<uint8_t> frame;

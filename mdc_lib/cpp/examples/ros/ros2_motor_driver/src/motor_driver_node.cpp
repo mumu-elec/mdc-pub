@@ -2,7 +2,7 @@
 // motor_driver_node.cpp — ROS2 (Humble) 驱动节点
 //
 // 硬件: Motor Driver Controller (STM32F401 + TB6612, 四路带编码器直流电机)
-// 协议: 协议规范.md (布局 v2.1, config_t = 231B)
+// 协议: 协议规范.md (布局 v2.x, config_t = 248B)
 //
 // 本节点基于 mdc_lib 通用调用库 (mdc_lib/cpp/mdc_lib.hpp, 命名空间 mdc):
 //   - 协议打包与解析全部由 mdc_lib 完成:
@@ -153,7 +153,7 @@ public:
         REPLY_NONE   = 0,
         REPLY_ACK_OK,     // ACK err=0x00
         REPLY_ACK_FAIL,   // ACK err=0xFF
-        REPLY_DATA,       // 数据应答 (如 0x10 → 231B config_t)
+        REPLY_DATA,       // 数据应答 (如 0x10 → 248B config_t)
     };
 
     explicit MotorDriverNode()
@@ -189,7 +189,7 @@ public:
                     mdc::Config cfg;                            // mdc_lib 解析 config_t
                     if (mdc::parse_config(out, cfg)) {
                         RCLCPP_INFO(get_logger(),
-                                    "READ_PARAM(0x10) 成功: 读取 config_t 231B "
+                                    "READ_PARAM(0x10) 成功: 读取 config_t 248B "
                                     "(baud=%u timeout=%u mode=[%u,%u,%u,%u])",
                                     (unsigned)cfg.baud_rate, (unsigned)cfg.cmd_timeout_ms,
                                     (unsigned)cfg.control_mode[0], (unsigned)cfg.control_mode[1],
@@ -208,10 +208,10 @@ public:
                    const std::shared_ptr<ros2_motor_driver::srv::SetConfig::Response> resp) {
                 std::vector<uint8_t> d(req->config.begin(), req->config.end());
                 mdc::Config cfg;
-                if (!mdc::parse_config(d, cfg)) {   // mdc_lib 校验 231B config_t
+                if (!mdc::parse_config(d, cfg)) {   // mdc_lib 校验 248B config_t
                     resp->success = false;
                     RCLCPP_ERROR(get_logger(),
-                                 "set_config: config 长度非法 (%zu, 期望 231B)", d.size());
+                                 "set_config: config 长度非法 (%zu, 期望 248B)", d.size());
                     return;
                 }
                 // 往返无损重打包 (受保护区置 0, 设备写入时自动还原), 再交给 mdc_lib 打包 0x11 帧
@@ -371,7 +371,7 @@ private:
             mdc::Ack ack;
             if (mdc::parse_ack(payload, ack)) handle_ack(cmd, ack.err);
         } else if (cmd == mdc::MD_CMD_READ_PARAM &&
-                   payload.size() == mdc::MD_CONFIG_SIZE) {   // READ_PARAM 应答: config_t 231B
+                   payload.size() == mdc::MD_CONFIG_SIZE) {   // READ_PARAM 应答: config_t 248B
             handle_data_reply(payload);
         } else {
             RCLCPP_WARN(get_logger(), "未识别帧 CMD=0x%02X LEN=%zu", cmd, payload.size());
@@ -415,7 +415,7 @@ private:
         ack_cv_.notify_all();
     }
 
-    // 数据应答 (如 0x10 → 231B config_t)
+    // 数据应答 (如 0x10 → 248B config_t)
     void handle_data_reply(const std::vector<uint8_t>& data)
     {
         {

@@ -1,7 +1,7 @@
 # mdc_lib — Python 参考实现（宿主版）
 
 > **定位：** Motor Driver Controller 通用调用库的 **Python 宿主实现** —— 只负责「打包要发送的数据」与「解析收到的数据」，**串口收发由用户自己实现**。
-> **协议依据：** [`../协议规范.md`](../协议规范.md)（布局 v2.1，config_t=231B，24 条文本指令，18 条二进制命令）
+> **协议依据：** [`../协议规范.md`](../协议规范.md)（布局 v2.x，config_t=248B，27 条文本指令，19 条二进制命令）
 > **API 依据：** [`../API.md`](../API.md)（统一 API 规范，本实现与该文档逐一对应）
 > **运行环境：** CPython 3.6+（MicroPython 请用 `esp32/micropython` 等平台实现）；**纯标准库，零第三方依赖**。
 
@@ -62,9 +62,9 @@ for b in ser.read(64):
 | `md_crc8(data) -> int` | CRC8（多项式 0x07，初值 0）。校验向量：`crc8([0x01,0x00])==0x15`、`crc8(b"123456789")==0xF4` |
 | `md_build_frame(cmd, data=b"") -> bytes` | 组帧 `[0xAA][CMD][LEN][DATA][CRC8]`，CRC 范围 = CMD+LEN+DATA |
 | `md_parse_frame(frame) -> Frame(cmd, payload, valid)` | 帧级解析：SYNC/长度/CRC 校验，无效帧返回 `valid=False`（不抛异常） |
-| `MDParser(max_data=250)` | 流式解析器；`feed(byte) -> (cmd, payload) | None` |
+| `MDParser(max_data=248)` | 流式解析器；`feed(byte) -> (cmd, payload) | None` |
 
-### 3.2 文本指令（24 条通用构造 + 10 个便捷封装）
+### 3.2 文本指令（27 条通用构造 + 10 个便捷封装）
 
 ```python
 md_text_build(cmd, args=None)      # "/mode 1 speed\n" / "/mode\n"（args=None 省略=读取模式）
@@ -77,17 +77,18 @@ md_text_mode(ch, mode=None)        # "/mode 1\n" 或 "/mode 1 speed\n"
 其余指令（speedctrl/posctrl/cpr/inv/einv/posangle/filter/uart2/priority/timeout/smap/rmap/dmap/sbusparam/sbusrange）用 `md_text_build` 构造，例如：
 `md_text_build("/speedctrl", "1 0.5 0.02 0.01 500 800 10 0")`、`md_text_build("/uart2", "115200 0 uart")`。
 
-### 3.3 二进制命令（15 个打包函数，返回整帧）
+### 3.3 二进制命令（16 个打包函数，返回整帧）
 
 | 函数 | CMD | DATA 布局 |
 |------|:---:|-----------|
 | `md_bin_ping()` | 0x01 | 无（验证向量：`AA 01 00 15`） |
 | `md_bin_read_param()` | 0x10 | 无 |
-| `md_bin_write_param(cfg)` | 0x11 | config_t 231B（cfg 可为 bytes 或 dict） |
+| `md_bin_write_param(cfg)` | 0x11 | config_t 248B（cfg 可为 bytes 或 dict） |
 | `md_bin_write_field(field_id, value, value_len=None)` | 0x12 | `[field_id:2B LE][value:nB]` |
 | `md_bin_save()` / `md_bin_load()` / `md_bin_factory_reset()` | 0x20/21/22 | 无 |
 | `md_bin_motor_raw(ch, dir, pwm)` | 0x30 | `[ch][dir][pwm:2B LE]`（ch=0~3，pwm=0~1000） |
 | `md_bin_motor_ctrl(t0,t1,t2,t3)` | 0x31 | `[m1~m4:4×int32 LE]`（支持负数） |
+| `md_bin_motor_jog(ch, rpm)` | 0x32 | `[ch:1B][rpm:2B LE 有符号]`（单轮点动，仅底盘模式生效；rpm=0 清除） |
 | `md_bin_subscribe(interval_ms)` | 0x40 | `[interval_ms:2B LE]`（固件钳位 ≥20ms） |
 | `md_bin_unsubscribe()` | 0x41 | 无 |
 | `md_bin_debug_sbus(enable)` / `md_bin_debug_speed(enable)` | 0x43/44 | `[enable:1B]` |
@@ -101,7 +102,7 @@ md_text_mode(ch, mode=None)        # "/mode 1\n" 或 "/mode 1 speed\n"
 | `md_parse_status(payload) -> md_status_t` | STATUS_REPORT，**56B/72B 按长度自动兼容**；字段：enc/tgt/rpm/rpm_raw/sbus_frame_cnt/sbus_ok_cnt/extended |
 | `md_parse_detect(payload) -> Detect(proto, inv, baud)` | DETECT_REPORT；proto：0 失败 1=SBUS 2=UART 3=ELRS |
 | `md_parse_sbus(payload) -> Sbus(ch)` | SBUS_DATA，16 通道 uint16 LE |
-| `md_parse_config(raw) -> dict` / `md_pack_config(cfg) -> bytes` | config_t 231B 解析/打包，往返无损 |
+| `md_parse_config(raw) -> dict` / `md_pack_config(cfg) -> bytes` | config_t 248B 解析/打包，往返无损 |
 
 ## 四、config_t 字段键名（md_parse_config / md_pack_config）
 
@@ -152,7 +153,7 @@ md_text_mode(ch, mode=None)        # "/mode 1\n" 或 "/mode 1 speed\n"
 | `md_parse_frame` | 无效帧返回 `Frame(valid=False)` 而不抛异常（与 C 版 valid 标志语义一致）；仅输入类型非法抛 ValueError |
 | `md_parse_ack` | 输入 1B DATA 段时 `cmd=None`（命令字由帧头提供）；传入完整 ACK 帧（≥4B）自动取 `cmd` |
 | `md_text_build` | `cmd` 缺 `/` 前缀时自动补上；`args=None` 表示省略参数（读取模式） |
-| `md_bin_write_param` | `cfg` 接受 231B bytes **或**字段 dict（自动 `md_pack_config`） |
+| `md_bin_write_param` | `cfg` 接受 248B bytes **或**字段 dict（自动 `md_pack_config`） |
 | `md_bin_write_field` | `value` 为 bytes 时 `value_len` 可省；为 int 时必须给 `value_len`（1/2/4） |
 | `md_pack_config` | 支持部分字段（缺省中性值）；受保护区置 0 |
 | `MDC` | 便捷类封装全部函数；额外提供 `parser` 流式解析器实例与 `reset_parser()` |
@@ -182,5 +183,5 @@ python test_mdc_lib.py                             # 全部断言通过则退出
 | 收不到 STATUS_REPORT | 需先 `md_bin_subscribe(50)` 开启周期上报 |
 | 0xF0 载荷是 72B 还是 56B | 取决于固件 `DEBUG_SPEED`（0x44）开关；`md_parse_status` 自动兼容 |
 | 文本指令无响应 | 确认发送内容带 `\n`（库已自动附加） |
-| 版本不匹配 | 上位机协议版本 D 必须与固件 SW_MAJOR 一致（当前布局 v2.1 → D=2） |
+| 版本不匹配 | 上位机协议版本 D 必须与固件 SW_MAJOR 一致（当前布局 v2.x → D=2） |
 | 解析器长时间无输出 | 噪声形成伪帧导致等待（见 §五），可 `reset()` 清缓冲 |

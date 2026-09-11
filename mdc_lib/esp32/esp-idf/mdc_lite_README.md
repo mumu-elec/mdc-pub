@@ -126,7 +126,7 @@ void ctrl_cb_demo(void)
 
 | | mdc_lib（完整） | mdc_lite（极简） |
 |---|---|---|
-| 关注范围 | 文本指令 + config + SBUS/检测 + 18 条二进制命令 | 只有 0x31/0x40/0x41/0xF0 4 条 |
+| 关注范围 | 文本指令 + config + SBUS/检测 + 19 条二进制命令 | 只有 0x31/0x40/0x41/0xF0 4 条 |
 | 字节布局 / CRC / 帧格式 | 协议规范 v2.1 | **与 mdc_lib 完全一致**（独立实现，仅字节兼容，不共享代码） |
 | 实现方式 | 独立实现全套 | `mdc_lite.c` 自带 CRC8/组帧；`mdc_lite_ctrl.c` 自带滑窗找 0xAA + CRC8 校验的流式解析，取 rpm 后回调 |
 | 依赖 | 无（纯 C） | 只 include 同族 `mdc_lite.h`，**不依赖 mdc_lib.h** |

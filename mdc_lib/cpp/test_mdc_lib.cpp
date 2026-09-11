@@ -1,7 +1,7 @@
 // ============================================================================
 // test_mdc_lib.cpp — mdc_lib 自测（无硬件，纯计算）
 // 覆盖：API.md §8 全部验证向量 + config 往返 + 流式解析器
-//       （垃圾字节 / 坏 CRC / 两帧连发 / LEN>250 防护 / 半帧）
+//       （垃圾字节 / 坏 CRC / 两帧连发 / LEN>248 防护 / 半帧）
 // 编译：g++ -std=c++17 -Wall -Wextra -o test_mdc_lib test_mdc_lib.cpp
 // 运行：./test_mdc_lib           （全 PASS 时 main 返回 0）
 // ============================================================================
@@ -100,8 +100,8 @@ static void test_build_frame_vectors() {
     // 便捷重载：指针 + 长度
     const uint8_t d[] = {0x32, 0x00};
     CHECK(build_frame(0x40, d, 2) == sub);
-    // DATA 超限抛异常
-    CHECK_THROW(build_frame(0x01, std::vector<uint8_t>(251, 0)));
+    // DATA 超限抛异常（248 为上限，249 起越界）
+    CHECK_THROW(build_frame(0x01, std::vector<uint8_t>(249, 0)));
 }
 
 static void test_motor_ctrl_vector() {
@@ -209,10 +209,10 @@ static void test_parser_two_frames() {
     }
 }
 
-static void test_parser_len_over_250() {
-    // LEN>250 防护：非法 LEN 帧被丢弃重扫，后续正常帧仍能解析
+static void test_parser_len_over_max() {
+    // LEN>248 防护：非法 LEN 帧被丢弃重扫，后续正常帧仍能解析
     Parser p;
-    const uint8_t bad[] = {0xAA, 0x01, 0xFF};   // LEN=255 > 250
+    const uint8_t bad[] = {0xAA, 0x01, 0xFF};   // LEN=255 > 248
     for (uint8_t b : bad) CHECK(!p.feed(b).has_value());
     const uint8_t good[] = {0xAA, 0x01, 0x00, 0x15};
     auto r = std::optional<std::pair<uint8_t, std::vector<uint8_t>>>{};
@@ -301,16 +301,16 @@ static void test_bin_motor_raw() {
 }
 
 static void test_bin_write_param() {
-    // 231B 配置
-    std::vector<uint8_t> cfg(231, 0x5A);
+    // 248B 配置
+    std::vector<uint8_t> cfg(248, 0x5A);
     const std::vector<uint8_t> f = bin_write_param(cfg);
-    CHECK(f[0] == 0xAA && f[1] == 0x11 && f[2] == 231);
-    CHECK(f.size() == 235);
-    for (size_t i = 3; i < 3 + 231; ++i) CHECK(f[i] == 0x5A);
+    CHECK(f[0] == 0xAA && f[1] == 0x11 && f[2] == 248);
+    CHECK(f.size() == 252);
+    for (size_t i = 3; i < 3 + 248; ++i) CHECK(f[i] == 0x5A);
     CHECK(crc8(f.data() + 1, f.size() - 2) == f[f.size() - 1]);
     // 长度错误
-    CHECK_THROW(bin_write_param(std::vector<uint8_t>(230, 0)));
-    CHECK_THROW(bin_write_param(std::vector<uint8_t>(232, 0)));
+    CHECK_THROW(bin_write_param(std::vector<uint8_t>(247, 0)));
+    CHECK_THROW(bin_write_param(std::vector<uint8_t>(249, 0)));
 }
 
 static void test_bin_write_field() {
@@ -319,11 +319,28 @@ static void test_bin_write_field() {
     CHECK(f[0] == 0xAA && f[1] == 0x12 && f[2] == 0x04);
     CHECK(f[3] == 0x14 && f[4] == 0x00 && f[5] == 0x2C && f[6] == 0x01);
     CHECK(crc8(f.data() + 1, f.size() - 2) == f[f.size() - 1]);
-    // 受保护区（offset<12）拒绝
-    CHECK_THROW(bin_write_field(11, make_bytes({0x01})));
+    // 受保护区（offset<11，固件返回 ACK 0x02）拒绝
+    CHECK_THROW(bin_write_field(10, make_bytes({0x01})));
     CHECK_THROW(bin_write_field(0, make_bytes({0x01})));
-    // offset=12 合法（baud_rate 低字节）
-    CHECK(bin_write_field(12, make_bytes({0x00, 0x84, 0x1E, 0x00}))[1] == 0x12);
+    // offset=11 合法（baud_rate 低字节）
+    CHECK(bin_write_field(11, make_bytes({0x00, 0x84, 0x1E, 0x00}))[1] == 0x12);
+}
+
+static void test_bin_motor_jog() {
+    // ch=1, rpm=-300 → DATA == 01 D4 FE（帧：AA 32 03 01 D4 FE <crc>）
+    const std::vector<uint8_t> f = bin_motor_jog(1, -300);
+    CHECK(f[0] == 0xAA && f[1] == 0x32 && f[2] == 0x03);
+    CHECK(f[3] == 0x01 && f[4] == 0xD4 && f[5] == 0xFE);
+    CHECK(crc8(f.data() + 1, f.size() - 2) == f[f.size() - 1]);
+    // rpm=0 清除覆盖：DATA == 00 00 00
+    const std::vector<uint8_t> f0 = bin_motor_jog(0, 0);
+    CHECK(f0[1] == 0x32 && f0[2] == 0x03);
+    CHECK(f0[3] == 0x00 && f0[4] == 0x00 && f0[5] == 0x00);
+    // 正向 rpm：ch=3, rpm=+123 → DATA == 03 7B 00
+    const std::vector<uint8_t> fp = bin_motor_jog(3, 123);
+    CHECK(fp[3] == 0x03 && fp[4] == 0x7B && fp[5] == 0x00);
+    // 参数校验
+    CHECK_THROW(bin_motor_jog(4, 100));
 }
 
 // ============================================================================
@@ -441,14 +458,14 @@ static Config make_test_config() {
         c.control_mode[ci]    = static_cast<uint8_t>(i % 3);          // 0,1,2,0
         c.motor_invert[ci]    = static_cast<uint8_t>(i);              // 0,1,2,3（含 bit1 编码器极性）
         c.encoder_cpr[ci]     = static_cast<uint16_t>(11 + i * 11);
-        c.speed_period_ms[ci] = static_cast<uint16_t>(5 + i * 3);
+        c.speed_period_ms[ci] = static_cast<uint8_t>(5 + i * 3);      // 5,8,11,14（v2.x u8）
         c.speed_pid_type[ci]  = static_cast<uint8_t>(i % 2);
         c.speed_olim[ci]      = static_cast<uint16_t>(1000 - i * 100);
         c.speed_kp[ci]   = 1.0f + i * 0.5f;
         c.speed_ki[ci]   = 0.1f * (i + 1);
         c.speed_kd[ci]   = 0.01f * (i + 1);
         c.speed_ilim[ci] = 500.0f - i * 100.0f;
-        c.pos_period_ms[ci] = static_cast<uint16_t>(10 + i * 5);
+        c.pos_period_ms[ci] = static_cast<uint8_t>(10 + i * 5);       // 10,15,20,25（v2.x u8）
         c.pos_pid_type[ci]  = static_cast<uint8_t>((i + 1) % 2);
         c.pos_kp[ci]   = 2.0f + i * 1.25f;
         c.pos_ki[ci]   = 0.05f * (i + 1);
@@ -466,6 +483,17 @@ static Config make_test_config() {
     }
     c.sbus_range_min = 172;
     c.sbus_range_max = 1811;
+    /* ── 底盘（v2.x 新增字段） ── */
+    c.chassis_type   = 1;                        // 差速底盘
+    c.wheel_diameter = 65;                       // 轮径 65mm
+    c.chassis_geo    = {{120, 180, 40}};         // 轮距/轴距/…
+    c.chassis_max    = {{300, 200, 100}};
+    c.chassis_accel  = {{50, 60, 70}};
+    c.stall_time_ms  = 300;
+    for (int i = 0; i < 4; ++i) {
+        c.motor_map[static_cast<size_t>(i)]      = static_cast<uint8_t>((i + 1) % 4);  // 1,2,3,0
+        c.rc_dir_default[static_cast<size_t>(i)] = static_cast<uint8_t>(i % 2);        // 0,1,0,1
+    }
     return c;
 }
 
@@ -503,6 +531,20 @@ static bool config_equal(const Config& a, const Config& b) {
     }
     if (a.sbus_range_min != b.sbus_range_min) return false;
     if (a.sbus_range_max != b.sbus_range_max) return false;
+    if (a.chassis_type != b.chassis_type) return false;
+    if (a.wheel_diameter != b.wheel_diameter) return false;
+    if (a.stall_time_ms != b.stall_time_ms) return false;
+    for (int i = 0; i < 3; ++i) {
+        const size_t ci = static_cast<size_t>(i);
+        if (a.chassis_geo[ci] != b.chassis_geo[ci]) return false;
+        if (a.chassis_max[ci] != b.chassis_max[ci]) return false;
+        if (a.chassis_accel[ci] != b.chassis_accel[ci]) return false;
+    }
+    for (int i = 0; i < 4; ++i) {
+        const size_t ci = static_cast<size_t>(i);
+        if (a.motor_map[ci] != b.motor_map[ci]) return false;
+        if (a.rc_dir_default[ci] != b.rc_dir_default[ci]) return false;
+    }
     return true;
 }
 
@@ -511,7 +553,7 @@ static void test_config_roundtrip() {
 
     // 1) pack → parse 往返无损（位域、float、数组全部一致）
     const std::vector<uint8_t> raw = pack_config(src);
-    CHECK(raw.size() == 231);
+    CHECK(raw.size() == 248);
     Config back;
     CHECK(parse_config(raw, back));
     CHECK(config_equal(src, back));
@@ -536,12 +578,85 @@ static void test_config_roundtrip() {
     CHECK(parse_config(raw_hdr, back2));
     CHECK(config_equal(back2, src));
 
-    // 5) bin_write_param(Config) 便捷重载与 231B 字节版一致
+    // 5) bin_write_param(Config) 便捷重载与 248B 字节版一致
     CHECK(bin_write_param(src) == bin_write_param(raw));
 
     // 6) 长度错误
-    CHECK(!parse_config(std::vector<uint8_t>(230, 0), back));
+    CHECK(!parse_config(std::vector<uint8_t>(247, 0), back));
     CHECK(!parse_config(std::vector<uint8_t>{}, back));
+}
+
+// ============================================================================
+// config_t：248B 新布局偏移抽查（协议规范 §5 v2.x）
+// ============================================================================
+static void test_config_offsets() {
+    Config c;                                   // 默认构造（motor_map 默认 ABCD）
+    c.baud_rate = 2000000;                      // @11
+    c.speed_period_ms = {{5, 6, 7, 8}};         // u8×4 @28
+    c.speed_kp[0] = 1.5f;                       // @42
+    c.pos_period_ms = {{10, 20, 30, 40}};       // u8×4 @106
+    c.sbus_channel = {{1, 2, 15, 16}};          // @206 存 0,1,14,15
+    c.rc_dir_ch    = {{16, 1, 1, 1}};           // @208 存 15,0,0,0
+    c.rc_map_mode  = {{1, 0, 0, 0}};            // @210 bit0
+    c.rc_dir_en    = {{0, 1, 0, 0}};            // @210 bit5
+    c.sbus_param   = {{111, 222, 333, 444}};    // @211
+    c.sbus_range_min = 172;                     // @219
+    c.sbus_range_max = 1811;                    // @221
+    c.chassis_type   = 3;                       // @223
+    c.wheel_diameter = 65;                      // @224
+    c.chassis_geo    = {{10, 20, 30}};          // @226
+    c.chassis_max    = {{100, 200, 300}};       // @232
+    c.chassis_accel  = {{5, 6, 7}};             // @238
+    c.stall_time_ms  = 300;                     // @244
+    c.rc_dir_default = {{1, 0, 1, 0}};          // @247 → 0x05
+
+    const std::vector<uint8_t> raw = pack_config(c);
+    CHECK(raw.size() == 248);
+
+    // @28 speed_period_ms（v2.x 压缩为 u8×4）
+    CHECK(raw[28] == 5 && raw[29] == 6 && raw[30] == 7 && raw[31] == 8);
+    // @42 speed_kp[0]
+    CHECK(detail::rd_f32(raw.data() + 42) == 1.5f);
+    // @106 pos_period_ms（u8×4）
+    CHECK(raw[106] == 10 && raw[107] == 20 && raw[108] == 30 && raw[109] == 40);
+    // @206 sbus_channel_pack：存 0,1,14,15 → 0xFE10
+    CHECK(detail::rd_u16(raw.data() + 206) == 0xFE10);
+    // @208 rc_dir_ch：存 15,0,0,0 → 0x000F
+    CHECK(detail::rd_u16(raw.data() + 208) == 0x000F);
+    // @210 rc_map_mode(bit0)=1 + rc_dir_en(bit5)=1 → 0x21
+    CHECK(raw[210] == 0x21);
+    // @211 sbus_param[0..3]
+    CHECK(detail::rd_u16(raw.data() + 211) == 111);
+    CHECK(detail::rd_u16(raw.data() + 213) == 222);
+    CHECK(detail::rd_u16(raw.data() + 215) == 333);
+    CHECK(detail::rd_u16(raw.data() + 217) == 444);
+    // @219/@221 range
+    CHECK(detail::rd_u16(raw.data() + 219) == 172);
+    CHECK(detail::rd_u16(raw.data() + 221) == 1811);
+    // @223~247 底盘
+    CHECK(raw[223] == 3);                                    // chassis_type
+    CHECK(detail::rd_u16(raw.data() + 224) == 65);           // wheel_diameter
+    CHECK(detail::rd_u16(raw.data() + 226) == 10);           // chassis_geo
+    CHECK(detail::rd_u16(raw.data() + 228) == 20);
+    CHECK(detail::rd_u16(raw.data() + 230) == 30);
+    CHECK(detail::rd_u16(raw.data() + 232) == 100);          // chassis_max
+    CHECK(detail::rd_u16(raw.data() + 234) == 200);
+    CHECK(detail::rd_u16(raw.data() + 236) == 300);
+    CHECK(detail::rd_u16(raw.data() + 238) == 5);            // chassis_accel
+    CHECK(detail::rd_u16(raw.data() + 240) == 6);
+    CHECK(detail::rd_u16(raw.data() + 242) == 7);
+    CHECK(detail::rd_u16(raw.data() + 244) == 300);          // stall_time_ms
+    CHECK(raw[246] == 0xE4);                                 // motor_map 默认 ABCD
+    CHECK(raw[247] == 0x05);                                 // rc_dir_default bit0/bit2
+
+    // 解析侧抽查：默认 ABCD 的 motor_map 打包 0xE4 → 解析回 [0,1,2,3]
+    Config back;
+    CHECK(parse_config(raw, back));
+    CHECK(back.motor_map[0] == 0 && back.motor_map[1] == 1 &&
+          back.motor_map[2] == 2 && back.motor_map[3] == 3);
+    CHECK(back.rc_dir_default[0] == 1 && back.rc_dir_default[1] == 0 &&
+          back.rc_dir_default[2] == 1 && back.rc_dir_default[3] == 0);
+    CHECK(back.chassis_type == 3 && back.wheel_diameter == 65);
 }
 
 // ============================================================================
@@ -556,7 +671,7 @@ int main() {
     test_parser_basic();
     test_parser_garbage_badcrc_good();
     test_parser_two_frames();
-    test_parser_len_over_250();
+    test_parser_len_over_max();
     test_parser_reset();
     test_parser_batch();
     test_text();
@@ -564,11 +679,13 @@ int main() {
     test_bin_motor_raw();
     test_bin_write_param();
     test_bin_write_field();
+    test_bin_motor_jog();
     test_parse_ack();
     test_parse_status();
     test_parse_detect();
     test_parse_sbus();
     test_config_roundtrip();
+    test_config_offsets();
     std::printf("PASS: %d, FAIL: %d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

@@ -23,7 +23,7 @@
 
 /* ---- internal constants (MD_LITE_* keeps the namespace free of mdc_lib) ---- */
 #define MD_LITE_SYNC         0xAAu   /* frame sync byte */
-#define MD_LITE_MAX_DATA     250u    /* max DATA segment length */
+#define MD_LITE_MAX_DATA     248u    /* max DATA segment length (= config_t size) */
 #define MD_LITE_CRC8_POLY    0x07u   /* CRC8 polynomial (init 0, bitwise) */
 #define MD_LITE_CMD_CTRL     0x31u   /* 4-channel batch control */
 #define MD_LITE_CMD_SUB      0x40u   /* subscribe status report */

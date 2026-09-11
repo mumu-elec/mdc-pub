@@ -7,8 +7,8 @@ mdc_lib.py — Motor Driver Controller 通用调用库（Python 参考实现）
 串口收发由用户自己实现（拿到返回的 bytes 自行 Serial.write / ser.write；
 收到的字节喂给解析函数或 MDParser 流式解析器）。
 
-**协议依据：** `协议规范.md`（布局 v2.1，config_t=231B，
-24 条文本指令，18 条二进制命令）
+**协议依据：** `协议规范.md`（布局 v2.x，config_t=248B，
+27 条文本指令，19 条二进制命令）
 **API 依据：** `../API.md`（统一 API 规范，本文件为其 Python 实现，
 函数命名 / 参数顺序 / 返回约定与该文档逐一对应）
 
@@ -51,16 +51,16 @@ from typing import Optional
 # 常量（API.md §2.5，所有平台一致）
 # ---------------------------------------------------------------------------
 MD_SYNC = 0xAA            # 二进制帧同步字
-MD_MAX_DATA = 250         # DATA 段最大长度
-MD_CONFIG_SIZE = 231      # config_t 大小
-MD_FRAME_MAX = 235        # 最大整帧长度（4 + 231）
+MD_MAX_DATA = 248         # DATA 段最大长度（= config_t 大小）
+MD_CONFIG_SIZE = 248      # config_t 大小
+MD_FRAME_MAX = 252        # 最大整帧长度（4 + 248）
 MD_CRC8_POLY = 0x07       # CRC8 多项式
 MD_CMD_PING = 0x01        # 二进制命令号（全表见 §5）
 MD_ERR_OK = 0x00          # ACK 成功
 MD_ERR_FAIL = 0xFF        # ACK 失败
 MD_PARSER_BUF = 256       # 流式解析器缓冲上限（默认，可裁剪）
 
-# 二进制命令字（协议规范 §3.3，18 条）
+# 二进制命令字（协议规范 §3.3，19 条）
 MD_CMD_READ_PARAM = 0x10
 MD_CMD_WRITE_PARAM = 0x11
 MD_CMD_WRITE_FIELD = 0x12
@@ -69,6 +69,7 @@ MD_CMD_LOAD_EEPROM = 0x21
 MD_CMD_FACTORY_RESET = 0x22
 MD_CMD_MOTOR_RAW = 0x30
 MD_CMD_MOTOR_CTRL = 0x31
+MD_CMD_MOTOR_JOG = 0x32   # 单轮点动（仅底盘模式，验向用）
 MD_CMD_SUBSCRIBE = 0x40
 MD_CMD_UNSUBSCRIBE = 0x41
 MD_CMD_DEBUG_SBUS = 0x43
@@ -84,8 +85,8 @@ __all__ = [
     "MD_CRC8_POLY", "MD_CMD_PING", "MD_ERR_OK", "MD_ERR_FAIL", "MD_PARSER_BUF",
     "MD_CMD_READ_PARAM", "MD_CMD_WRITE_PARAM", "MD_CMD_WRITE_FIELD",
     "MD_CMD_SAVE_EEPROM", "MD_CMD_LOAD_EEPROM", "MD_CMD_FACTORY_RESET",
-    "MD_CMD_MOTOR_RAW", "MD_CMD_MOTOR_CTRL", "MD_CMD_SUBSCRIBE",
-    "MD_CMD_UNSUBSCRIBE", "MD_CMD_DEBUG_SBUS", "MD_CMD_DEBUG_SPEED",
+    "MD_CMD_MOTOR_RAW", "MD_CMD_MOTOR_CTRL", "MD_CMD_MOTOR_JOG",
+    "MD_CMD_SUBSCRIBE", "MD_CMD_UNSUBSCRIBE", "MD_CMD_DEBUG_SBUS", "MD_CMD_DEBUG_SPEED",
     "MD_CMD_ENTER_BL", "MD_CMD_REBOOT", "MD_CMD_STATUS_REPORT",
     "MD_CMD_DETECT_REPORT", "MD_CMD_SBUS_DATA",
     "md_crc8", "md_build_frame", "md_parse_frame", "MDParser",
@@ -94,7 +95,8 @@ __all__ = [
     "md_text_reset", "md_text_enczero", "md_text_mode",
     "md_bin_ping", "md_bin_read_param", "md_bin_write_param",
     "md_bin_write_field", "md_bin_save", "md_bin_load", "md_bin_factory_reset",
-    "md_bin_motor_raw", "md_bin_motor_ctrl", "md_bin_subscribe",
+    "md_bin_motor_raw", "md_bin_motor_ctrl", "md_bin_motor_jog",
+    "md_bin_subscribe",
     "md_bin_unsubscribe", "md_bin_debug_sbus", "md_bin_debug_speed",
     "md_bin_enter_bl", "md_bin_reboot",
     "md_parse_ack", "md_parse_status", "md_parse_detect", "md_parse_sbus",
@@ -402,7 +404,7 @@ def md_text_mode(ch: int, mode: Optional[str] = None) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# §5 二进制命令层（15 个打包函数，返回整帧字节）
+# §5 二进制命令层（16 个打包函数，返回整帧字节）
 # ---------------------------------------------------------------------------
 def md_bin_ping() -> bytes:
     """0x01 PING：连通性测试。验证向量：``== b"\\xAA\\x01\\x00\\x15"``。"""
@@ -410,14 +412,14 @@ def md_bin_ping() -> bytes:
 
 
 def md_bin_read_param() -> bytes:
-    """0x10 READ_PARAM：读取全部配置（应答为 config_t 231B）。"""
+    """0x10 READ_PARAM：读取全部配置（应答为 config_t 248B）。"""
     return md_build_frame(MD_CMD_READ_PARAM)
 
 
 def md_bin_write_param(cfg) -> bytes:
     """0x11 WRITE_PARAM：写入全部配置（仅 RAM，受保护字段自动还原）。
 
-    :param cfg: 231B bytes（config_t），或字段 dict（自动经 md_pack_config 打包）
+    :param cfg: 248B bytes（config_t），或字段 dict（自动经 md_pack_config 打包）
     """
     if isinstance(cfg, dict):
         data = md_pack_config(cfg)
@@ -436,7 +438,7 @@ def md_bin_write_field(field_id: int, value, value_len: Optional[int] = None) ->
     * value 为 bytes/bytearray 时 value_len 缺省取 len(value)
     * value 为 int 时必须给 value_len（1/2/4），按小端打包
 
-    注意：固件拒绝 offset < 12（受保护区），库只负责打包，不代做该检查。
+    注意：固件拒绝 offset < 11（受保护区 11B 头部，错误码 0x02），库只负责打包，不代做该检查。
     """
     field_id = _check_int(field_id, 0, 0xFFFF, "field_id")
     if isinstance(value, (bytes, bytearray)):
@@ -492,6 +494,20 @@ def md_bin_motor_ctrl(t0: int, t1: int, t2: int, t3: int) -> bytes:
     vals = [_check_int(v, -0x80000000, 0x7FFFFFFF, "t%d" % i)
             for i, v in enumerate((t0, t1, t2, t3))]
     return md_build_frame(MD_CMD_MOTOR_CTRL, struct.pack("<4i", *vals))
+
+
+def md_bin_motor_jog(ch: int, rpm: int) -> bytes:
+    """0x32 MOTOR_JOG：单轮点动（仅底盘模式生效，用于验向）。
+
+    DATA：``[ch:1B][rpm:2B LE 有符号]``；ch=0~3 物理通道，rpm 为有符号 int16。
+    * 仅底盘模式（chassis_type≠0）生效：覆盖该物理通道轮目标低速转动
+    * rpm=0 清除覆盖；400ms 无刷新自动解除
+    * 非底盘模式下本帧被固件忽略
+    验证向量：``md_bin_motor_jog(1, -300)`` 的 DATA 段 == ``01 D4 FE``。
+    """
+    ch = _check_int(ch, 0, 3, "ch")
+    rpm = _check_int(rpm, -0x8000, 0x7FFF, "rpm")
+    return md_build_frame(MD_CMD_MOTOR_JOG, bytes((ch,)) + struct.pack("<h", rpm))
 
 
 def md_bin_subscribe(interval_ms: int) -> bytes:
@@ -619,9 +635,10 @@ def md_parse_sbus(payload) -> Sbus:
 
 
 # ---------------------------------------------------------------------------
-# §6.5 config_t：解析 / 打包（协议规范 §5 偏移表，布局 v2.1，231B）
+# §6.5 config_t：解析 / 打包（协议规范 §5 偏移表，布局 v2.x，248B）
 # ---------------------------------------------------------------------------
-# md_pack_config 缺省字段的中性值：数值 0；遥控通道映射默认 CH1（存 0）
+# md_pack_config 缺省字段的中性值：数值 0；遥控通道映射默认 CH1（存 0）；
+# 电机映射默认 ABCD 顺序（对应固件默认 0xE4）
 _CONFIG_DEFAULTS = {
     "baud_rate": 0, "cmd_timeout_ms": 0,
     "protocol": 0, "sbus_inv": 0, "ctrl_priority": 0,
@@ -638,20 +655,25 @@ _CONFIG_DEFAULTS = {
     "sbus_channel": [1, 1, 1, 1], "rc_dir_ch": [1, 1, 1, 1],
     "rc_map_mode": [0, 0, 0, 0], "rc_dir_en": [0, 0, 0, 0],
     "sbus_param": [0, 0, 0, 0], "sbus_range_min": 0, "sbus_range_max": 0,
+    "chassis_type": 0, "wheel_diameter": 0,
+    "chassis_geo": [0, 0, 0], "chassis_max": [0, 0, 0],
+    "chassis_accel": [0, 0, 0], "stall_time_ms": 0,
+    "motor_map": [0, 1, 2, 3], "rc_dir_default": [0, 0, 0, 0],
 }
 
 
 def md_parse_config(raw) -> dict:
-    """解析 231B config_t → dict（键名与 API.md §6.5 字段一一对应）。
+    """解析 248B config_t → dict（键名与 API.md §6.5 字段一一对应）。
 
     位域按通道解码（API.md §6.5 位域解析约定）：
-        * control_mode / motor_invert：每电机 2bit（``(raw[18] >> (ch*2)) & 0x03``）
+        * control_mode / motor_invert / motor_map：每电机 2bit
         * speed_pid_type / pos_pid_type / speed_filter_type：每电机 4bit
         * sbus_channel / rc_dir_ch：每电机 4bit，存储值 0~15 表示 CH1~16，解析 +1
         * rc_map_mode（bit0-3）/ rc_dir_en（bit4-7）：每电机 1bit
+        * rc_dir_default：bit0-3 每通道 1bit（ch4 底盘保留）
         * protocol（bit0-3）/ sbus_inv（bit4）/ ctrl_priority（bit5）：来自 comm_flags
 
-    :raises ValueError: 长度不是 231B
+    :raises ValueError: 长度不是 248B
     """
     raw = _as_bytes(raw, "raw")
     if len(raw) != MD_CONFIG_SIZE:
@@ -670,51 +692,62 @@ def md_parse_config(raw) -> dict:
     out["control_mode"] = [(cm >> (ch * 2)) & 0x03 for ch in range(4)]
     mi = raw[19]                                  # motor_invert
     out["motor_invert"] = [(mi >> (ch * 2)) & 0x03 for ch in range(4)]
-    # 速度环（offset 20~109）
+    # 速度环（offset 20~105；v2.x period 压缩为 u8）
     out["encoder_cpr"] = list(struct.unpack_from("<4H", raw, 20))
-    out["speed_period_ms"] = list(struct.unpack_from("<4H", raw, 28))
-    spt = struct.unpack_from("<H", raw, 36)[0]    # speed_pid_type
+    out["speed_period_ms"] = list(struct.unpack_from("<4B", raw, 28))
+    spt = struct.unpack_from("<H", raw, 32)[0]    # speed_pid_type
     out["speed_pid_type"] = [(spt >> (ch * 4)) & 0x0F for ch in range(4)]
-    out["speed_olim"] = list(struct.unpack_from("<4H", raw, 38))
-    sp = struct.unpack_from("<16f", raw, 46)      # speed_ctrl_params
+    out["speed_olim"] = list(struct.unpack_from("<4H", raw, 34))
+    sp = struct.unpack_from("<16f", raw, 42)      # speed_ctrl_params
     out["speed_kp"] = list(sp[0::4])
     out["speed_ki"] = list(sp[1::4])
     out["speed_kd"] = list(sp[2::4])
     out["speed_ilim"] = list(sp[3::4])
-    # 位置环（offset 110~207）
-    out["pos_period_ms"] = list(struct.unpack_from("<4H", raw, 110))
-    ppt = struct.unpack_from("<H", raw, 118)[0]   # pos_pid_type
+    # 位置环（offset 106~199；v2.x period 压缩为 u8）
+    out["pos_period_ms"] = list(struct.unpack_from("<4B", raw, 106))
+    ppt = struct.unpack_from("<H", raw, 110)[0]   # pos_pid_type
     out["pos_pid_type"] = [(ppt >> (ch * 4)) & 0x0F for ch in range(4)]
-    pp = struct.unpack_from("<16f", raw, 120)     # pos_ctrl_params
+    pp = struct.unpack_from("<16f", raw, 112)     # pos_ctrl_params
     out["pos_kp"] = list(pp[0::4])
     out["pos_ki"] = list(pp[1::4])
     out["pos_kd"] = list(pp[2::4])
     out["pos_ilim"] = list(pp[3::4])
-    out["pos_olim"] = list(struct.unpack_from("<4f", raw, 184))
-    out["pos_angle_cpr"] = list(struct.unpack_from("<4H", raw, 200))
-    # 滤波 / 遥控（offset 208~230）
-    sft = struct.unpack_from("<H", raw, 208)[0]   # speed_filter_type
+    out["pos_olim"] = list(struct.unpack_from("<4f", raw, 176))
+    out["pos_angle_cpr"] = list(struct.unpack_from("<4H", raw, 192))
+    # 滤波 / 遥控（offset 200~222）
+    sft = struct.unpack_from("<H", raw, 200)[0]   # speed_filter_type
     out["speed_filter_type"] = [(sft >> (ch * 4)) & 0x0F for ch in range(4)]
-    out["speed_filter_window"] = list(struct.unpack_from("<4B", raw, 210))
-    scp = struct.unpack_from("<H", raw, 214)[0]   # sbus_channel_pack
+    out["speed_filter_window"] = list(struct.unpack_from("<4B", raw, 202))
+    scp = struct.unpack_from("<H", raw, 206)[0]   # sbus_channel_pack
     out["sbus_channel"] = [((scp >> (ch * 4)) & 0x0F) + 1 for ch in range(4)]
-    rdc = struct.unpack_from("<H", raw, 216)[0]   # rc_dir_ch
+    rdc = struct.unpack_from("<H", raw, 208)[0]   # rc_dir_ch
     out["rc_dir_ch"] = [((rdc >> (ch * 4)) & 0x0F) + 1 for ch in range(4)]
-    rmm = raw[218]                                # rc_map_mode
+    rmm = raw[210]                                # rc_map_mode
     out["rc_map_mode"] = [(rmm >> ch) & 0x01 for ch in range(4)]
     out["rc_dir_en"] = [(rmm >> (4 + ch)) & 0x01 for ch in range(4)]
-    out["sbus_param"] = list(struct.unpack_from("<4H", raw, 219))
-    out["sbus_range_min"] = struct.unpack_from("<H", raw, 227)[0]
-    out["sbus_range_max"] = struct.unpack_from("<H", raw, 229)[0]
+    out["sbus_param"] = list(struct.unpack_from("<4H", raw, 211))
+    out["sbus_range_min"] = struct.unpack_from("<H", raw, 219)[0]
+    out["sbus_range_max"] = struct.unpack_from("<H", raw, 221)[0]
+    # 底盘（offset 223~247，v2.0 新增）
+    out["chassis_type"] = raw[223]
+    out["wheel_diameter"] = struct.unpack_from("<H", raw, 224)[0]
+    out["chassis_geo"] = list(struct.unpack_from("<3H", raw, 226))
+    out["chassis_max"] = list(struct.unpack_from("<3H", raw, 232))
+    out["chassis_accel"] = list(struct.unpack_from("<3H", raw, 238))
+    out["stall_time_ms"] = struct.unpack_from("<H", raw, 244)[0]
+    mm = raw[246]                                 # motor_map
+    out["motor_map"] = [(mm >> (ch * 2)) & 0x03 for ch in range(4)]
+    rd = raw[247]                                 # rc_dir_default
+    out["rc_dir_default"] = [(rd >> ch) & 0x01 for ch in range(4)]
     return out
 
 
 def md_pack_config(cfg: dict) -> bytes:
-    """把配置 dict 打包为 231B config_t bytes（协议规范 §5 偏移表）。
+    """把配置 dict 打包为 248B config_t bytes（协议规范 §5 偏移表）。
 
-    * 键名与 md_parse_config 一致；缺省字段取中性值（数值 0，通道映射默认 CH1），
-      因此可用 ``md_parse_config`` 的结果直接回写（往返无损）
-    * 受保护区（offset 0~10：magic/hw_ver/sw_ver/reserved/crc）恒为 0，
+    * 键名与 md_parse_config 一致；缺省字段取中性值（数值 0，通道映射默认 CH1，
+      电机映射默认 ABCD 顺序），因此可用 ``md_parse_config`` 的结果直接回写（往返无损）
+    * 受保护区（offset 0~10：magic/hw_ver/sw_ver/sw_ver_hw/crc）恒为 0，
       固件写入时自动还原受保护字段
     * 位域打包与 API.md §6.5 约定一致：sbus_channel / rc_dir_ch 的 API 值
       1~16 存为 0~15
@@ -741,40 +774,55 @@ def md_pack_config(cfg: dict) -> bytes:
     # 电机位域
     raw[18] = _pack_2bit(d["control_mode"], "control_mode")
     raw[19] = _pack_2bit(d["motor_invert"], "motor_invert")
-    # 速度环
+    # 速度环（v2.x period 为 u8，1~255）
     struct.pack_into("<4H", raw, 20,
                      *[_check_int(v, 0, 0xFFFF, "encoder_cpr") for v in _check_list(d["encoder_cpr"], 4, "encoder_cpr")])
-    struct.pack_into("<4H", raw, 28,
-                     *[_check_int(v, 0, 0xFFFF, "speed_period_ms") for v in _check_list(d["speed_period_ms"], 4, "speed_period_ms")])
-    struct.pack_into("<H", raw, 36, _pack_4bit(d["speed_pid_type"], "speed_pid_type"))
-    struct.pack_into("<4H", raw, 38,
+    struct.pack_into("<4B", raw, 28,
+                     *[_check_int(v, 0, 0xFF, "speed_period_ms") for v in _check_list(d["speed_period_ms"], 4, "speed_period_ms")])
+    struct.pack_into("<H", raw, 32, _pack_4bit(d["speed_pid_type"], "speed_pid_type"))
+    struct.pack_into("<4H", raw, 34,
                      *[_check_int(v, 0, 0xFFFF, "speed_olim") for v in _check_list(d["speed_olim"], 4, "speed_olim")])
-    _pack_float16(raw, 46, d["speed_kp"], d["speed_ki"], d["speed_kd"], d["speed_ilim"])
-    # 位置环
-    struct.pack_into("<4H", raw, 110,
-                     *[_check_int(v, 0, 0xFFFF, "pos_period_ms") for v in _check_list(d["pos_period_ms"], 4, "pos_period_ms")])
-    struct.pack_into("<H", raw, 118, _pack_4bit(d["pos_pid_type"], "pos_pid_type"))
-    _pack_float16(raw, 120, d["pos_kp"], d["pos_ki"], d["pos_kd"], d["pos_ilim"])
-    struct.pack_into("<4f", raw, 184,
+    _pack_float16(raw, 42, d["speed_kp"], d["speed_ki"], d["speed_kd"], d["speed_ilim"])
+    # 位置环（v2.x period 为 u8，1~255）
+    struct.pack_into("<4B", raw, 106,
+                     *[_check_int(v, 0, 0xFF, "pos_period_ms") for v in _check_list(d["pos_period_ms"], 4, "pos_period_ms")])
+    struct.pack_into("<H", raw, 110, _pack_4bit(d["pos_pid_type"], "pos_pid_type"))
+    _pack_float16(raw, 112, d["pos_kp"], d["pos_ki"], d["pos_kd"], d["pos_ilim"])
+    struct.pack_into("<4f", raw, 176,
                      *[_check_float(v, "pos_olim") for v in _check_list(d["pos_olim"], 4, "pos_olim")])
-    struct.pack_into("<4H", raw, 200,
+    struct.pack_into("<4H", raw, 192,
                      *[_check_int(v, 0, 0xFFFF, "pos_angle_cpr") for v in _check_list(d["pos_angle_cpr"], 4, "pos_angle_cpr")])
     # 滤波 / 遥控
-    struct.pack_into("<H", raw, 208, _pack_4bit(d["speed_filter_type"], "speed_filter_type"))
-    struct.pack_into("<4B", raw, 210,
+    struct.pack_into("<H", raw, 200, _pack_4bit(d["speed_filter_type"], "speed_filter_type"))
+    struct.pack_into("<4B", raw, 202,
                      *[_check_int(v, 0, 0xFF, "speed_filter_window") for v in _check_list(d["speed_filter_window"], 4, "speed_filter_window")])
-    struct.pack_into("<H", raw, 214, _pack_channel(d["sbus_channel"], "sbus_channel"))
-    struct.pack_into("<H", raw, 216, _pack_channel(d["rc_dir_ch"], "rc_dir_ch"))
+    struct.pack_into("<H", raw, 206, _pack_channel(d["sbus_channel"], "sbus_channel"))
+    struct.pack_into("<H", raw, 208, _pack_channel(d["rc_dir_ch"], "rc_dir_ch"))
     rmm = 0
     for ch, v in enumerate(_check_list(d["rc_map_mode"], 4, "rc_map_mode")):
         rmm |= (_check_int(v, 0, 1, "rc_map_mode") & 0x01) << ch
     for ch, v in enumerate(_check_list(d["rc_dir_en"], 4, "rc_dir_en")):
         rmm |= (_check_int(v, 0, 1, "rc_dir_en") & 0x01) << (4 + ch)
-    raw[218] = rmm
-    struct.pack_into("<4H", raw, 219,
+    raw[210] = rmm
+    struct.pack_into("<4H", raw, 211,
                      *[_check_int(v, 0, 0xFFFF, "sbus_param") for v in _check_list(d["sbus_param"], 4, "sbus_param")])
-    struct.pack_into("<H", raw, 227, _check_int(d["sbus_range_min"], 0, 0xFFFF, "sbus_range_min"))
-    struct.pack_into("<H", raw, 229, _check_int(d["sbus_range_max"], 0, 0xFFFF, "sbus_range_max"))
+    struct.pack_into("<H", raw, 219, _check_int(d["sbus_range_min"], 0, 0xFFFF, "sbus_range_min"))
+    struct.pack_into("<H", raw, 221, _check_int(d["sbus_range_max"], 0, 0xFFFF, "sbus_range_max"))
+    # 底盘（v2.0 新增；chassis_type 枚举 0~6）
+    raw[223] = _check_int(d["chassis_type"], 0, 0xFF, "chassis_type")
+    struct.pack_into("<H", raw, 224, _check_int(d["wheel_diameter"], 0, 0xFFFF, "wheel_diameter"))
+    struct.pack_into("<3H", raw, 226,
+                     *[_check_int(v, 0, 0xFFFF, "chassis_geo") for v in _check_list(d["chassis_geo"], 3, "chassis_geo")])
+    struct.pack_into("<3H", raw, 232,
+                     *[_check_int(v, 0, 0xFFFF, "chassis_max") for v in _check_list(d["chassis_max"], 3, "chassis_max")])
+    struct.pack_into("<3H", raw, 238,
+                     *[_check_int(v, 0, 0xFFFF, "chassis_accel") for v in _check_list(d["chassis_accel"], 3, "chassis_accel")])
+    struct.pack_into("<H", raw, 244, _check_int(d["stall_time_ms"], 0, 0xFFFF, "stall_time_ms"))
+    raw[246] = _pack_2bit(d["motor_map"], "motor_map")
+    rd = 0
+    for ch, v in enumerate(_check_list(d["rc_dir_default"], 4, "rc_dir_default")):
+        rd |= (_check_int(v, 0, 1, "rc_dir_default") & 0x01) << ch
+    raw[247] = rd
     return bytes(raw)
 
 
@@ -926,6 +974,11 @@ class MDC:
     def motor_ctrl(t0, t1, t2, t3):
         """同 md_bin_motor_ctrl。"""
         return md_bin_motor_ctrl(t0, t1, t2, t3)
+
+    @staticmethod
+    def motor_jog(ch, rpm):
+        """同 md_bin_motor_jog。"""
+        return md_bin_motor_jog(ch, rpm)
 
     @staticmethod
     def subscribe(interval_ms):

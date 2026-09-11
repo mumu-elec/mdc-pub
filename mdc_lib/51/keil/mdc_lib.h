@@ -2,7 +2,7 @@
  * @file    mdc_lib.h
  * @brief   Motor Driver Controller generic library (8051 / Keil C51 port)
  *
- * Protocol basis: 协议规范.md (layout v2.1, config_t = 231B)
+ * Protocol basis: 协议规范.md (layout v2.x, config_t = 248B, 19 binary commands)
  * API spec:       ../../API.md (one unified md_* signature set for all platforms)
  *
  * Positioning: pack-only / parse-only. This library NEVER touches the UART or
@@ -19,7 +19,7 @@
  *         xdata md_parser_t g_parser;     (MD_PARSER_BUF bytes of xdata)
  *     and any config buffer as xdata too. See README.md for RAM usage.
  *   - Set MD_ENABLE_CONFIG=0 to compile out the config full-field functions
- *     (md_pack_config / md_parse_config / md_bin_write_param) and the 231B
+ *     (md_pack_config / md_parse_config / md_bin_write_param) and the 248B
  *     xdata scratch buffer, saving RAM and code.
  *
  * GCC syntax check: the source uses MD_51_XDATA (expands to the real xdata
@@ -40,16 +40,16 @@ extern "C" {
 /* ==================== Constants (API.md 2.5, same on all platforms) ==================== */
 
 #define MD_SYNC         0xAAu    /* binary frame sync byte */
-#define MD_MAX_DATA     250u     /* max DATA segment length */
-#define MD_CONFIG_SIZE  231u     /* config_t size */
-#define MD_FRAME_MAX    235u     /* max whole frame length (4 + 231) */
+#define MD_MAX_DATA     248u     /* max DATA segment length (= config_t size) */
+#define MD_CONFIG_SIZE  248u     /* config_t size */
+#define MD_FRAME_MAX    252u     /* max whole frame length (4 + 248) */
 #define MD_CRC8_POLY    0x07u    /* CRC8 polynomial (init 0, bitwise) */
 #define MD_CMD_PING     0x01u    /* ping */
 #define MD_ERR_OK       0x00u    /* ACK ok */
 #define MD_ERR_FAIL     0xFFu    /* ACK fail */
 
 /* Binary command numbers (protocol spec 3.3) */
-#define MD_CMD_READ_PARAM    0x10u   /* read all config (reply: config_t 231B) */
+#define MD_CMD_READ_PARAM    0x10u   /* read all config (reply: config_t 248B) */
 #define MD_CMD_WRITE_PARAM   0x11u   /* write all config (RAM only) */
 #define MD_CMD_WRITE_FIELD   0x12u   /* write single field by offset */
 #define MD_CMD_SAVE_EEPROM   0x20u   /* RAM -> EEPROM */
@@ -57,6 +57,7 @@ extern "C" {
 #define MD_CMD_FACTORY_RESET 0x22u   /* factory reset */
 #define MD_CMD_MOTOR_RAW     0x30u   /* single channel PWM direct drive */
 #define MD_CMD_MOTOR_CTRL    0x31u   /* 4-channel batch control (core frame) */
+#define MD_CMD_MOTOR_JOG     0x32u   /* single wheel jog (chassis mode only) */
 #define MD_CMD_SUBSCRIBE     0x40u   /* start periodic status report */
 #define MD_CMD_UNSUBSCRIBE   0x41u   /* stop status report */
 #define MD_CMD_DEBUG_SBUS    0x43u   /* SBUS channel report on/off */
@@ -68,15 +69,15 @@ extern "C" {
 #define MD_CMD_SBUS_DATA     0xF2u   /* SBUS 16-channel raw report (MCU push) */
 
 /* Streaming parser buffer size (shrinkable). Default 256 fits the largest
- * frame (235B). On 8051 you may shrink it, but below 235 the READ_PARAM
- * 231B reply cannot be fully parsed. See README.md for RAM trade-offs. */
+ * frame (252B). On 8051 you may shrink it, but below 252 the READ_PARAM
+ * 248B reply cannot be fully parsed. See README.md for RAM trade-offs. */
 #ifndef MD_PARSER_BUF
 #define MD_PARSER_BUF 256u
 #endif
 
 /* Config full-field function switch (default 1).
  * Set to 0 on small-memory 8051 to compile out md_pack_config /
- * md_parse_config / md_bin_write_param and the 231B xdata scratch. */
+ * md_parse_config / md_bin_write_param and the 248B xdata scratch. */
 #ifndef MD_ENABLE_CONFIG
 #define MD_ENABLE_CONFIG 1
 #endif
@@ -109,12 +110,13 @@ typedef struct {
     uint8_t err;
 } md_ack_t;
 
-/* config_t full-field structure (API.md 6.5).
- * Bit-field conventions: control_mode/motor_invert 2 bits per motor;
- * speed_pid_type/pos_pid_type/speed_filter_type 4 bits per motor;
+/* config_t full-field structure (API.md 6.5, layout v2.x, 248B).
+ * Bit-field conventions: control_mode/motor_invert/motor_map 2 bits per
+ * motor; speed_pid_type/pos_pid_type/speed_filter_type 4 bits per motor;
  * sbus_channel/rc_dir_ch stored 0~15 = CH1~16, struct holds 1~16
  * (parse +1 / pack -1); rc_map_mode 1 bit per motor, rc_dir_en from
- * the same byte bits 4-7. */
+ * the same byte bits 4-7; rc_dir_default 1 bit per channel in bits 0-3
+ * (bit 3 / ch4 reserved for chassis). */
 typedef struct {
     /* comm */
     uint32_t baud_rate;          /* @11 USART2 baud */
@@ -126,30 +128,39 @@ typedef struct {
     uint8_t  control_mode[4];    /* @18 2bit/motor: 0 open 1 speed 2 position */
     uint8_t  motor_invert[4];    /* @19 2bit/motor: bit0 pin invert bit1 encoder polarity */
     uint16_t encoder_cpr[4];     /* @20 encoder lines */
-    uint16_t speed_period_ms[4]; /* @28 speed loop period */
-    uint8_t  speed_pid_type[4];  /* @36 4bit/motor: 0 positional 1 incremental */
-    uint16_t speed_olim[4];      /* @38 speed output limit (PWM 0~1000) */
-    float    speed_kp[4];        /* @46+ speed Kp */
+    uint8_t  speed_period_ms[4]; /* @28 speed loop period (ms, 1~255) */
+    uint8_t  speed_pid_type[4];  /* @32 4bit/motor: 0 positional 1 incremental */
+    uint16_t speed_olim[4];      /* @34 speed output limit (PWM 0~1000) */
+    float    speed_kp[4];        /* @42+ speed Kp */
     float    speed_ki[4];        /*      speed Ki */
     float    speed_kd[4];        /*      speed Kd */
     float    speed_ilim[4];      /*      speed integral limit */
-    uint16_t pos_period_ms[4];   /* @110 position loop period */
-    uint8_t  pos_pid_type[4];    /* @118 4bit/motor */
-    float    pos_kp[4];          /* @120+ position Kp */
+    uint8_t  pos_period_ms[4];   /* @106 position loop period (ms, 1~255) */
+    uint8_t  pos_pid_type[4];    /* @110 4bit/motor */
+    float    pos_kp[4];          /* @112+ position Kp */
     float    pos_ki[4];          /*       position Ki */
     float    pos_kd[4];          /*       position Kd */
     float    pos_ilim[4];        /*       position integral limit */
-    float    pos_olim[4];        /* @184 position output limit (RPM) */
-    uint16_t pos_angle_cpr[4];   /* @200 pulses per revolution (0 = use encoder_cpr) */
-    uint8_t  speed_filter_type[4];   /* @208 4bit/motor: 0 none 1 moving avg 2 LPF 3 median */
-    uint8_t  speed_filter_window[4]; /* @210 filter window */
-    uint8_t  sbus_channel[4];    /* @214 RC channel map (1~16; pack -1 to 0~15) */
-    uint8_t  rc_dir_ch[4];       /* @216 direction map channel (1~16) */
-    uint8_t  rc_map_mode[4];     /* @218 bit0-3 1bit/motor: 0 center zero 1 min zero */
-    uint8_t  rc_dir_en[4];       /* @218 bit4-7 1bit/motor */
-    uint16_t sbus_param[4];      /* @219 RC travel */
-    uint16_t sbus_range_min;     /* @227 channel lower bound */
-    uint16_t sbus_range_max;     /* @229 channel upper bound */
+    float    pos_olim[4];        /* @176 position output limit (RPM) */
+    uint16_t pos_angle_cpr[4];   /* @192 pulses per revolution (0 = use encoder_cpr) */
+    uint8_t  speed_filter_type[4];   /* @200 4bit/motor: 0 none 1 moving avg 2 LPF 3 median */
+    uint8_t  speed_filter_window[4]; /* @202 filter window */
+    uint8_t  sbus_channel[4];    /* @206 RC channel map (1~16; pack -1 to 0~15) */
+    uint8_t  rc_dir_ch[4];       /* @208 direction map channel (1~16) */
+    uint8_t  rc_map_mode[4];     /* @210 bit0-3 1bit/motor: 0 center zero 1 min zero */
+    uint8_t  rc_dir_en[4];       /* @210 bit4-7 1bit/motor */
+    uint16_t sbus_param[4];      /* @211 RC travel */
+    uint16_t sbus_range_min;     /* @219 channel lower bound */
+    uint16_t sbus_range_max;     /* @221 channel upper bound */
+    /* chassis x1 (new in v2.x) */
+    uint8_t  chassis_type;       /* @223 chassis type (0~6, 0 = none) */
+    uint16_t wheel_diameter;     /* @224 wheel diameter (mm) */
+    uint16_t chassis_geo[3];     /* @226 chassis geometry (u16 x3) */
+    uint16_t chassis_max[3];     /* @232 chassis speed limits (u16 x3) */
+    uint16_t chassis_accel[3];   /* @238 chassis acceleration (u16 x3) */
+    uint16_t stall_time_ms;      /* @244 stall protection time (ms) */
+    uint8_t  motor_map[4];       /* @246 2bit/motor: motor index map 0=A 1=B 2=C 3=D (default ABCD) */
+    uint8_t  rc_dir_default[4];  /* @247 bit0-3 1bit/channel: RC direction default */
 } md_config_t;
 
 /* Streaming parser state (API.md 3.4).
@@ -184,7 +195,7 @@ void md_parser_init(md_parser_t* p);
 
 /* Feed one byte. Returns 1 when a complete CRC-valid frame is available and
  * fills cmd/payload/payload_len, otherwise 0. Sliding window finds 0xAA;
- * LEN>250 or CRC failure drops the candidate sync and rescans.
+ * LEN>248 or CRC failure drops the candidate sync and rescans.
  * NOTE: payload points into p->buf; copy it out before the next feed().
  * Text echo lines are discarded as noise (bytes before 0xAA are ignored). */
 int md_parser_feed(md_parser_t* p, uint8_t byte,
@@ -216,7 +227,7 @@ uint16_t md_text_mode(uint8_t ch, const char* mode, char* out, uint16_t cap);
  *   md_text_build("/uart2",     "115200 0 uart", out, cap);
  *   md_text_build("/sbusrange", "172 1811", out, cap); */
 
-/* ==================== Binary command layer (15 packers) ==================== */
+/* ==================== Binary command layer (16 packers) ==================== */
 
 uint16_t md_bin_ping(uint8_t* out, uint16_t cap);            /* 0x01 */
 uint16_t md_bin_read_param(uint8_t* out, uint16_t cap);      /* 0x10 */
@@ -232,6 +243,10 @@ uint16_t md_bin_motor_raw(uint8_t ch, uint8_t dir, uint16_t pwm,
                           uint8_t* out, uint16_t cap);       /* 0x30 ch=0~3 dir=0fwd/1rev pwm=0~1000 */
 uint16_t md_bin_motor_ctrl(int32_t t0, int32_t t1, int32_t t2, int32_t t3,
                            uint8_t* out, uint16_t cap);      /* 0x31 4x int32 LE */
+/* 0x32 single wheel jog: DATA = [ch:1B][rpm:int16 LE signed]. ch = 0~3
+ * physical channel; only effective in chassis mode (chassis_type != 0),
+ * rpm = 0 clears the override, 400 ms without refresh releases it. */
+uint16_t md_bin_motor_jog(uint8_t ch, int16_t rpm, uint8_t* out, uint16_t cap);
 uint16_t md_bin_subscribe(uint16_t interval_ms, uint8_t* out, uint16_t cap); /* 0x40 FW clamps >=20ms */
 uint16_t md_bin_unsubscribe(uint8_t* out, uint16_t cap);     /* 0x41 */
 uint16_t md_bin_debug_sbus(uint8_t enable, uint8_t* out, uint16_t cap);       /* 0x43 */
@@ -255,7 +270,7 @@ int md_parse_detect(const uint8_t* payload, uint16_t len, md_detect_t* out);
 int md_parse_sbus(const uint8_t* payload, uint16_t len, uint16_t ch[16]);
 
 #if MD_ENABLE_CONFIG
-/* config_t (231B raw) <-> md_config_t full-field parse/pack (bit fields
+/* config_t (248B raw) <-> md_config_t full-field parse/pack (bit fields
  * included), lossless round trip. Protected region (offset 0~10) is zeroed
  * on pack (firmware restores protected fields on write). */
 int      md_parse_config(const uint8_t* raw, uint16_t len, md_config_t* out);

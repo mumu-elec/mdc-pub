@@ -48,7 +48,7 @@ void on_speed(const int32_t rpm[4])   /* rpm[0..3] = 四通道 RPM */
 ## 编译与运行
 
 1. 按顶层 `README.md` 的 Keil 工程创建步骤，把本目录 `main.c` + `mdc_lite_ctrl.c` + `mdc_lite.c` + `mdc_lib.c` 加入工程，Include Paths 指向本目录。
-2. 工程级 Define 加 `MD_ENABLE_CONFIG=0`（省 config 全字段函数与 231B xdata）。解析器缓冲 `MD_PARSER_BUF` 默认 256，能容纳最长 0xF0 帧（72B 帧 = 76B）；要在工程级 Define 里把它调小（如 `MD_PARSER_BUF=96`）以省 xdata 时，**必须同时作用于 mdc_lib.c 与 main.c**（它决定 `md_parser_t` 结构大小，两处不一致会越界）。
+2. 工程级 Define 加 `MD_ENABLE_CONFIG=0`（省 config 全字段函数与 248B xdata）。解析器缓冲 `MD_PARSER_BUF` 默认 256，能容纳最长 0xF0 帧（72B 帧 = 76B）；要在工程级 Define 里把它调小（如 `MD_PARSER_BUF=96`）以省 xdata 时，**必须同时作用于 mdc_lib.c 与 main.c**（它决定 `md_parser_t` 结构大小，两处不一致会越界）。
 3. 上电后 51 发送订阅帧，随后每 50ms 发一帧 0x31 控制；控制板按周期推送 0xF0，UART 中断里 `md_lite_ctrl_feed` 触发 `on_speed`。
 
 ## 内存说明（重要）

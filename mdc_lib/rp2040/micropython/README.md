@@ -2,7 +2,7 @@
 
 > 四路直流电机驱动器（Motor Driver Controller，STM32F401 + TB6612）通信协议库的 MicroPython 移植。
 > **只负责「打包」与「解析」，串口收发由你自己实现**；纯 MicroPython **零依赖**（无 `machine` / `ustruct` / `struct` / `math` 等任何 import），在任意 MicroPython 板或 CPython 上均可直接 `import`。
-> 协议依据：[`../../协议规范.md`](../../协议规范.md)（布局 v2.1，config_t=231B，24 条文本指令，18 条二进制命令）；API 规范：[`../../API.md`](../../API.md)。
+> 协议依据：[`../../协议规范.md`](../../协议规范.md)（布局 v2.x，config_t=248B，27 条文本指令，19 条二进制命令）；API 规范：[`../../API.md`](../../API.md)。
 
 ---
 
@@ -89,13 +89,13 @@ uart.write(mdc_lib.md_bin_motor_ctrl(100, -200, 0, 300))
 
 | 分类 | 函数 |
 |------|------|
-| 底层 | `md_crc8(data)`、`md_build_frame(cmd, data=b"")`、`md_parse_frame(frame)`、`MDParser(max_data=250)`（`.feed(byte)` / `.reset()`） |
+| 底层 | `md_crc8(data)`、`md_build_frame(cmd, data=b"")`、`md_parse_frame(frame)`、`MDParser(max_data=248)`（`.feed(byte)` / `.reset()`） |
 | 文本指令 | `md_text_build(cmd, args=None)` + 便捷封装：`md_text_version / help / status / check / detect / save / load / reset / enczero(ch) / mode(ch, mode=None)` |
-| 二进制命令（15 个，返回整帧） | `md_bin_ping / read_param / write_param(cfg) / write_field(field_id, value, value_len=None) / save / load / factory_reset / motor_raw(ch, dir_, pwm) / motor_ctrl(t0,t1,t2,t3) / subscribe(interval_ms) / unsubscribe / debug_sbus(enable) / debug_speed(enable) / enter_bl / reboot` |
+| 二进制命令（16 个，返回整帧） | `md_bin_ping / read_param / write_param(cfg) / write_field(field_id, value, value_len=None) / save / load / factory_reset / motor_raw(ch, dir_, pwm) / motor_ctrl(t0,t1,t2,t3) / motor_jog(ch, rpm) / subscribe(interval_ms) / unsubscribe / debug_sbus(enable) / debug_speed(enable) / enter_bl / reboot` |
 | 解析 | `md_parse_ack(payload)`、`md_parse_status(payload)`、`md_parse_detect(payload)`、`md_parse_sbus(payload)`、`md_parse_config(raw)`、`md_pack_config(cfg)` |
 | 便捷类 | `MDC()`：全部函数封装为静态方法 + 内置 `parser`（`mdc.feed(byte)` / `mdc.reset_parser()`） |
 
-常量：`MD_SYNC=0xAA`、`MD_MAX_DATA=250`、`MD_CONFIG_SIZE=231`、`MD_FRAME_MAX=235`、`MD_CRC8_POLY=0x07`、`MD_ERR_OK=0x00`、`MD_ERR_FAIL=0xFF`，以及全部 `MD_CMD_*` 命令字。
+常量：`MD_SYNC=0xAA`、`MD_MAX_DATA=248`、`MD_CONFIG_SIZE=248`、`MD_FRAME_MAX=252`、`MD_CRC8_POLY=0x07`、`MD_ERR_OK=0x00`、`MD_ERR_FAIL=0xFF`，以及全部 `MD_CMD_*` 命令字。
 
 ### 解析结果字段说明
 
@@ -108,10 +108,10 @@ uart.write(mdc_lib.md_bin_motor_ctrl(100, -200, 0, 300))
 - `md_parse_sbus` → `Sbus(ch)`：ch 为 16 个通道原始值
 - `md_parse_config` → **dict**，键名与 API.md §6.5 / Python 版一致（见下节）
 
-## 五、config 读写示例（config_t 231B）
+## 五、config 读写示例（config_t 248B）
 
 ```python
-# ① 读取全部配置（0x10 READ_PARAM 应答 231B payload）
+# ① 读取全部配置（0x10 READ_PARAM 应答 248B payload）
 uart.write(mdc_lib.md_bin_read_param())
 # ... 收到 0x10 帧后：
 cfg = mdc_lib.md_parse_config(payload)      # -> dict，键名与 Python 版一致
