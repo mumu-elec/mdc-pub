@@ -6489,9 +6489,10 @@ function mdcSuggestHostForProtocol(devD){
       var st = document.createElement('style');
       st.id = 'ol-sg-style';
       st.textContent =
-        '#ol-sg .sg-go:hover{filter:brightness(1.08)}'+
-        '#ol-sg .sg-dl:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}'+
-        '#ol-sg .sg-no:hover{color:var(--text)}';
+        '#ol-sg .sg-act{color:var(--muted)}'+
+        '#ol-sg .sg-act:hover{background:color-mix(in srgb,var(--muted) 9%,transparent);color:var(--text)}'+
+        '#ol-sg .sg-main{color:var(--accent)}'+
+        '#ol-sg .sg-main:hover{background:color-mix(in srgb,var(--accent) 9%,transparent)}';
       document.head.appendChild(st);
     }
     var ov = document.createElement('div');
@@ -6501,18 +6502,18 @@ function mdcSuggestHostForProtocol(devD){
     var warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex-shrink:0;display:block"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
     var icoDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
     var icoGo = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;display:block"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
-    var btn = 'display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:7px;font-size:13.5px;font-weight:600;cursor:pointer';
+    var btn = 'display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:6px 10px;border:none;border-radius:6px;background:transparent;font-size:13px;font-weight:600;cursor:pointer';
     ov.innerHTML =
-      '<div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px 24px 18px;width:min(400px,90vw);box-shadow:0 12px 36px rgba(0,0,0,.28)">'+
+      '<div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px 24px 16px;width:min(400px,90vw);box-shadow:0 12px 36px rgba(0,0,0,.28)">'+
         '<div style="display:flex;align-items:center;gap:8px;color:var(--red);font-size:15px;font-weight:700">'+warn+'协议版本不匹配</div>'+
-        '<div style="margin:12px 0 18px;font-size:13.5px;line-height:1.7;color:var(--text)">当前上位机 <b>v'+HOST_VER.B+'.'+HOST_VER.C+'</b> 与设备固件协议不匹配，是否跳转到配套上位机 <b>v'+h.ver+'</b>？</div>'+
-        '<div style="display:flex;gap:8px;margin-bottom:8px">'+
-          (h.online?'<button id="ol-sg-on" class="sg-dl" style="'+btn+';flex:1;padding:9px 0;border:none;background:transparent;color:var(--accent)">'+icoDl+'下载在线</button>':'')+
-          (h.offline?'<button id="ol-sg-off" class="sg-dl" style="'+btn+';flex:1;padding:9px 0;border:none;background:transparent;color:var(--accent)">'+icoDl+'下载离线</button>':'')+
+        '<div style="margin:12px 0 14px;font-size:13.5px;line-height:1.7;color:var(--text)">当前上位机 <b>v'+HOST_VER.B+'.'+HOST_VER.C+'</b> 与设备固件协议不匹配，是否跳转到配套上位机 <b>v'+h.ver+'</b>？</div>'+
+        '<div style="display:flex;justify-content:flex-end;gap:2px">'+
+          (h.online?'<button id="ol-sg-on" class="sg-act" style="'+btn+'">'+icoDl+'下载联网</button>':'')+
+          (h.offline?'<button id="ol-sg-off" class="sg-act" style="'+btn+'">'+icoDl+'下载离线</button>':'')+
         '</div>'+
-        '<div style="display:flex;gap:8px">'+
-          (h.web?'<button id="ol-sg-web" class="sg-go" style="'+btn+';flex:1;padding:9px 0;border:none;background:var(--accent-solid);color:#fff">'+icoGo+'跳转到 v'+h.ver+'</button>':'')+
-          '<button id="ol-sg-no" class="sg-no" style="'+btn+';padding:9px 14px;border:none;background:transparent;color:var(--muted)">取消</button>'+
+        '<div style="display:flex;justify-content:flex-end;gap:2px;margin-top:2px">'+
+          (h.web?'<button id="ol-sg-web" class="sg-main" style="'+btn+'">'+icoGo+'跳转到 v'+h.ver+'</button>':'')+
+          '<button id="ol-sg-no" class="sg-act" style="'+btn+'">取消</button>'+
         '</div>'+
       '</div>';
     document.body.appendChild(ov);
