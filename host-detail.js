@@ -175,10 +175,13 @@
       '<span class="k">状态</span><span class="v">'+(cur?'当前维护':'存档 · 不再更新')+'</span>'+
       '</div></section>';
 
-    /* 2. 更新内容 */
+    /* 2. 更新内容 (highlights 要点列表优先, 缺省回退 notes — 与 fw-detail.js 同逻辑) */
+    var pts=(host.highlights&&host.highlights.length)?host.highlights:(host.notes?[host.notes]:[]);
     html+='<section><h2>'+ic('check','hi-acc')+'更新内容</h2>';
-    if(host.notes){
-      html+='<ul class="plain"><li>'+ic('check')+'<span>'+esc(host.notes)+'</span></li></ul>';
+    if(pts.length){
+      html+='<ul class="plain">';
+      pts.forEach(function(s){html+='<li>'+ic('check')+'<span>'+esc(s)+'</span></li>';});
+      html+='</ul>';
     }else html+='<div class="note">暂无更新说明</div>';
     html+='</section>';
 

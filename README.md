@@ -60,7 +60,7 @@
 | v1 存档固件 | v1.1.0 / v1.1.1 / v1.1.2 | `release/motor_driver_ctrl-v1.1.*.bin` / `.hex`（协议 D=1，配上位机 v1.x） |
 | Bootloader | v1.0 | `release/bootloader-v1.0.bin` |
 | 技术手册 | v2.0 / v1.2 存档 | 当前版 `docs/technical-manual.md`；发布快照 `docs/v2/2.0/`（手册+配图+PDF+例程）、`docs/v1/1.2/`（手册+配图+PDF+AI 接口手册+协议 JSON，永不覆盖） |
-| 例程 | 例程 v2.0 / mdc_lib | 多文件经 GitHub 浏览 / 下载：`docs/v2/2.0/examples/`（248B 协议口径，随 v1.2.0 首发）与 `mdc_lib/`（12 平台库；当前按 231B 旧布局编写，248B 对齐版整理中）；zip 快照 `docs/v2/2.0/mdc_examples_v2.0.zip` 仅归档 |
+| 例程 | 例程 v2.0 / mdc_lib | 多文件经 GitHub 浏览 / 下载：`docs/v2/2.0/examples/`（248B 协议口径，随固件 v1.2.0 发布）与 `mdc_lib/`（12 平台库；v2.0，2026-09-12 已对齐 248B / 协议 D=2）；zip 快照 `docs/v2/2.0/mdc_examples_v2.0.zip` 仅归档 |
 
 > 版本规则：固件 vA.D.E（A=硬件 D=协议 E=补丁）· 上位机 vD.F（D=协议 F=修复）。上位机与固件的协议版本 D 必须一致；不匹配时联网版上位机会自动引导切换到配套版本。
 
@@ -87,7 +87,7 @@ motor_driver_control/
 │   ├── technical-manual.md #   当前版技术手册（恒等于最新快照内容；唯一可被"发新版"覆盖的文件）
 │   ├── v2/2.0/             #   v2.0 发布快照：手册 + image/ + 例程（examples/ 多文件 + zip 归档）
 │   └── v1/1.2/             #   v1.2 发布快照：手册 + image/ + PDF + AI 接口手册 + protocol/
-└── mdc_lib/                # 例程库（多平台 + 协议规范；231B 旧布局，248B 对齐版整理中）
+└── mdc_lib/                # 例程库（多平台 + 协议规范；v2.0 已对齐 248B / 协议 D=2）
 ```
 
 ## 更新发布物（详见 SPEC.md §5）
