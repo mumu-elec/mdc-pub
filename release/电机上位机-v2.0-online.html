@@ -6456,27 +6456,18 @@ function mdcPickOnlineFirmware(container){
 }
 
 // ====== 2. 自更新检查 (app.js 启动钩子调用) ======
-// 同协议线内比 F(修复号); 若存在更高协议线则提示新一代。每次加载最多提示一次。
+// 只检查当前协议线内的修复版本 (同线 D 相同比 F): v1.0 只看有无 v1.1/v1.2…, v2 同理;
+// 不跨协议线比较 (跨线场景由协议不匹配引导弹窗负责)。每次加载最多提示一次。
 // 只在状态栏绿字提示"有更新", 不做任何下载/跳转动作 (状态栏文字被后续操作正常覆盖)。
 function mdcCheckHostUpdate(){
   mdcManifest().then(function(mf){
     var own = mdcLineByProtocol(mf, HOST_VER.B);
-    var newer = null;
-    if(own){
-      var h = own.releases[own.releases.length-1].host;
-      var v = _mfcVer(h && h.ver);
-      if(v[0] === HOST_VER.B && v[1] > HOST_VER.C) newer = h;
-    }
-    if(!newer){
-      // 同线无更新 → 看有没有更高协议线 (如 D=1 上位机遇上已发布 D=2 线)
-      for(var i=0;i<mf.lines.length;i++){
-        var ln = mf.lines[i];
-        if(ln.protocol > HOST_VER.B && ln.releases.length){ newer = ln.releases[ln.releases.length-1].host; break; }
-      }
-    }
-    if(!newer || !newer.ver) return;
+    if(!own || !own.releases.length) return;
+    var h = own.releases[own.releases.length-1].host;
+    var v = _mfcVer(h && h.ver);
+    if(!(v[0] === HOST_VER.B && v[1] > HOST_VER.C)) return;   // 无更高修复号
     var st = document.getElementById('status');
-    if(st) st.innerHTML = '<span style="color:var(--green)">发现新版本 v'+newer.ver+' 可更新 (当前 v'+HOST_VER.B+'.'+HOST_VER.C+')</span>';
+    if(st) st.innerHTML = '<span style="color:var(--green)">发现新版本 v'+h.ver+' 可更新 (当前 v'+HOST_VER.B+'.'+HOST_VER.C+')</span>';
   }).catch(function(){ /* 断网静默 */ });
 }
 
