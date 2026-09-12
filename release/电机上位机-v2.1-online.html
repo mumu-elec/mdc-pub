@@ -6355,7 +6355,8 @@ async function firmwareUpdate(){
 //
 // 三件套:
 //   1. 在线固件库   — 固件升级对话框内拉取发布页 releases.json, 下载固件后走既有刷写流程
-//   2. 自更新检查   — 启动后比对发布页最新上位机版本, 有新版状态栏绿字提示 (仅提示, 无动作)
+//   2. 自更新检查   — 进入页面即比对发布页最新上位机版本 (数据源并行竞速), 有新版在状态栏
+//                     一行内提示: 左绿字 + 右无边框图标按钮 online 下载 | offline 下载 | 发布页 跳转
 //   3. 配套上位机引导 — 设备协议 D 与上位机不符时, 自动找到配套上位机并引导跳转/下载
 //
 // 数据源: 发布页根目录 releases.json (单一事实来源, 发布页同款);
@@ -6390,7 +6391,8 @@ function _mfcVer(s){                       // "2.1" → [2,1]; 异常返回 [0,0
 }
 
 // 候选数据源: 当前站点优先 — 页面可位于 站点根 / web/<线>/ / release/, 逐级向上试探 releases.json;
-// file:// 打开或当前站点全无 → 落到 GitHub 兜底。命中哪个源, 固件/上位机下载就跟随哪个源
+// file:// 打开或当前站点全无 → 落到 GitHub 兜底。候选源并行竞速 (见 mdcManifest), 最快命中者胜出,
+// 固件/上位机下载跟随胜出源
 function _mfCandidates(){
   var out = [], seen = {};
   function push(u){ if(!seen[u]){ seen[u] = 1; out.push(u); } }
@@ -6414,23 +6416,36 @@ function _fetchJson(url){
   }).catch(function(e){ if(timer) clearTimeout(timer); throw e; });
 }
 
-// manifest 拉取 (候选源依次尝试, 命中即缓存基准; 全部失败清缓存, 下次调用重试)
+// manifest 拉取 (候选源并行竞速, 最先命中者胜出并缓存基准; 全部失败清缓存, 下次调用重试)
+// 竞速替代旧的逐个串行试探: 等待时间由最快源决定, 不再叠加慢源的超时 (启动更新检查提速的关键);
+// 各源内容同源发布保持一致, 下载跟随胜出源即可
 function mdcManifest(){
   if(_mfPromise) return _mfPromise;
   _mfPromise = (function(){
-    var urls = _mfCandidates(), i = 0;
-    function attempt(){
-      if(i >= urls.length) return Promise.reject(new Error('数据源不可用'));
-      var url = urls[i++];
-      return _fetchJson(url).then(function(mf){
-        _mfUrl = url;
-        _mfBase = url.slice(0, url.lastIndexOf('/') + 1);
-        return mf;
-      }).catch(function(){ return i < urls.length ? attempt() : Promise.reject(new Error('数据源不可用')); });
-    }
-    return attempt();
+    // 竞速只决出胜者, 命中源登记放在胜出后一次性写入:
+    // 同时成功的候选都会进入各自回调, 若在回调里写基准会互相覆盖成"最后写入者"
+    var races = _mfCandidates().map(function(url){
+      return _fetchJson(url).then(function(mf){ return { url:url, mf:mf }; });
+    });
+    var any = (typeof Promise.any === 'function') ? Promise.any(races) : _raceFirst(races);
+    return any.then(function(w){
+      _mfUrl = w.url;
+      _mfBase = w.url.slice(0, w.url.lastIndexOf('/') + 1);
+      return w.mf;
+    });
   })().catch(function(e){ _mfPromise = null; throw e; });
   return _mfPromise;
+}
+
+// Promise.any 兜底 (极旧浏览器): 任一 fulfilled 即胜, 全部 rejected 才失败
+function _raceFirst(promises){
+  return new Promise(function(resolve, reject){
+    var pending = promises.length;
+    if(!pending){ reject(new Error('数据源不可用')); return; }
+    promises.forEach(function(p){
+      p.then(resolve, function(){ if(--pending === 0) reject(new Error('数据源不可用')); });
+    });
+  });
 }
 
 // 取某协议线, 无则 null
@@ -6570,7 +6585,8 @@ function mdcPickOnlineFirmware(container){
 // ====== 2. 自更新检查 (app.js 启动钩子调用) ======
 // 只检查当前协议线内的修复版本 (同线 D 相同比 F): v1.0 只看有无 v1.1/v1.2…, v2 同理;
 // 不跨协议线比较 (跨线场景由协议不匹配引导弹窗负责)。每次加载最多提示一次。
-// 只在状态栏绿字提示"有更新", 不做任何下载/跳转动作 (状态栏文字被后续操作正常覆盖)。
+// 状态栏一行: 左=绿字提示, 右=无边框图标按钮 online 下载 | offline 下载 | 发布页 跳转。
+// (状态栏文字被后续操作正常覆盖, 提示随写随走)
 function mdcCheckHostUpdate(){
   mdcManifest().then(function(mf){
     var own = mdcLineByProtocol(mf, HOST_VER.B);
@@ -6578,9 +6594,51 @@ function mdcCheckHostUpdate(){
     var h = own.releases[own.releases.length-1].host;
     var v = _mfcVer(h && h.ver);
     if(!(v[0] === HOST_VER.B && v[1] > HOST_VER.C)) return;   // 无更高修复号
-    var st = document.getElementById('status');
-    if(st) st.innerHTML = '<span style="color:var(--green)">发现新版本 v'+h.ver+' 可更新 (当前 v'+HOST_VER.B+'.'+HOST_VER.C+')</span>';
+    mdcShowUpdateBar(h);
   }).catch(function(){ /* 断网静默 */ });
+}
+
+// 更新提示行 (动态节点, hover 态一次性注入 style)
+function mdcShowUpdateBar(h){
+  var st = document.getElementById('status');
+  if(!st) return;
+  if(!document.getElementById('ol-upd-style')){
+    var stl = document.createElement('style');
+    stl.id = 'ol-upd-style';
+    stl.textContent =
+      '#status .ol-upd{color:var(--muted);background:transparent}'+
+      '#status .ol-upd:hover{background:color-mix(in srgb,var(--muted) 9%,transparent);color:var(--text)}';
+    document.head.appendChild(stl);
+  }
+  var icoDl = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;flex-shrink:0;display:block"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>';
+  var icoGo = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;flex-shrink:0;display:block"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+  var btn = 'display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:2px 5px;border:none;border-radius:6px;background:transparent;font-size:11px;font-weight:600;line-height:16px;cursor:pointer;transition:background .15s ease,color .15s ease,opacity .15s ease';
+  st.style.display = 'flex';
+  st.style.alignItems = 'center';
+  st.style.gap = '4px';
+  st.innerHTML =
+    '<span style="color:var(--green);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">发现新版本 v'+h.ver+' 可更新 (当前 v'+HOST_VER.B+'.'+HOST_VER.C+')</span>'+
+    '<span style="display:inline-flex;align-items:center;flex-shrink:0">'+
+      (h.online?'<button id="ol-up-on" class="ol-upd" title="下载联网版 v'+h.ver+'" style="'+btn+'">'+icoDl+'online</button>':'')+
+      (h.offline?'<button id="ol-up-off" class="ol-upd" title="下载离线版 v'+h.ver+'" style="'+btn+'">'+icoDl+'offline</button>':'')+
+      '<button id="ol-up-pub" class="ol-upd" title="打开发布页" style="'+btn+'">'+icoGo+'发布页</button>'+
+    '</span>';
+  // 下载: 点击→「下载中…」防重入, 失败恢复原样 (断网静默, 与模块整体策略一致)
+  function dl(id, url, label){
+    var b = st.querySelector(id); if(!b) return;
+    b.onclick = function(){
+      b.innerHTML = '下载中…'; b.style.opacity = '.6';
+      mdcFetchBuffer(_mfcAbs(url)).then(function(buf){
+        mdcSaveBlob(buf, url.split('/').pop(), 'text/html');
+        b.innerHTML = label; b.style.opacity = '';
+      }).catch(function(){ b.innerHTML = label; b.style.opacity = ''; });
+    };
+  }
+  dl('#ol-up-on', h.online, icoDl+'online');
+  dl('#ol-up-off', h.offline, icoDl+'offline');
+  // 发布页: 新标签打开胜出数据源的站点根 (仅浏览, 不影响当前串口连接)
+  var pub = st.querySelector('#ol-up-pub');
+  if(pub) pub.onclick = function(){ window.open(_mfBase || MANIFEST_BASE, '_blank'); };
 }
 
 // ====== 3. 配套上位机引导 (config.js updateVerInfo 协议不匹配钩子调用) ======
@@ -9565,8 +9623,9 @@ initOlimSync();  // initialize PWM output limit sync
 updateSbusParamLabel();
 syncRangeCustom();
 
-// ====== 联网版: 启动后延迟检查上位机新版本 (online.js 提供; 完全离线打包不含该模块) ======
-if(window.MDC_ONLINE&&window.MDCOnline)setTimeout(function(){try{MDCOnline.checkHostUpdate()}catch(e){}},3000);
+// ====== 联网版: 进入页面立即检查上位机新版本 (online.js 提供; 完全离线打包不含该模块) ======
+// 数据源为并行竞速 (online.js mdcManifest), 无需再靠延迟让出启动窗口
+if(window.MDC_ONLINE&&window.MDCOnline){try{MDCOnline.checkHostUpdate()}catch(e){}}
 
 // ====== 参数分区底色分组 (v2.4) ======
 // 按 .sec/.sec-sub 标题将 #params-section 下的参数项包裹进 .param-group 容器，

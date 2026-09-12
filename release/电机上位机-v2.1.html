@@ -9233,8 +9233,9 @@ initOlimSync();  // initialize PWM output limit sync
 updateSbusParamLabel();
 syncRangeCustom();
 
-// ====== 联网版: 启动后延迟检查上位机新版本 (online.js 提供; 完全离线打包不含该模块) ======
-if(window.MDC_ONLINE&&window.MDCOnline)setTimeout(function(){try{MDCOnline.checkHostUpdate()}catch(e){}},3000);
+// ====== 联网版: 进入页面立即检查上位机新版本 (online.js 提供; 完全离线打包不含该模块) ======
+// 数据源为并行竞速 (online.js mdcManifest), 无需再靠延迟让出启动窗口
+if(window.MDC_ONLINE&&window.MDCOnline){try{MDCOnline.checkHostUpdate()}catch(e){}}
 
 // ====== 参数分区底色分组 (v2.4) ======
 // 按 .sec/.sec-sub 标题将 #params-section 下的参数项包裹进 .param-group 容器，
