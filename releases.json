@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-13",
+  "updated": "2026-09-19",
   "site": "https://mumu-elec.github.io/mdc-pub",
   "bootloader": {
     "ver": "1.0",
@@ -55,6 +55,22 @@
           "online": "release/电机上位机-v2.1-online.html",
           "web": "web/v2/",
           "detail": "host/v2.1.html"
+        },
+        {
+          "ver": "2.2",
+          "date": "2026-09-19",
+          "notes": "新增配置导出/导入、安卓 WebUSB 免安装直连与 APK 壳 App、校验参数一键化，并重组参数区布局（协议 D=2 不变，零固件改动，配套固件 v1.2.x 线）",
+          "highlights": [
+            "新增配置导出/导入——248B 整结构体导出为 Python / C / ROS YAML 代码块（可选 CRC=完整下发帧，整串直发即可），导入自动识别并校验，换下位机免逐项重配",
+            "新增安卓平板免安装直连——OTG 线连 CH340N，Chrome 打开页面即用（WebUSB 直驱），参数/图表/终端/固件刷写全功能可用，桌面浏览器行为不变",
+            "新增安卓 APK 壳 App——免浏览器安装即用（「MDC 上位机」），原生 USB 串口传输更稳，页面内容与离线版完全相同",
+            "「校验参数」一键化——点击自动取参即比对，绿=一致 / 红=不一致，不覆盖已改动的参数输入框",
+            "参数区布局重组——编码器线数紧凑表格（输入轴/输出轴/减速比同行）、方向映射+默认反转合并「通道方向控制」、减速比常显；参数含义与协议零变化"
+          ],
+          "offline": "release/电机上位机-v2.2.html",
+          "online": "release/电机上位机-v2.2-online.html",
+          "web": "web/v2/",
+          "detail": "host/v2.2.html"
         }
       ],
       "releases": [
@@ -82,9 +98,9 @@
             { "name": "例程 v2.0（GitHub）", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/2.0/examples", "note": "Python×6 + Arduino×1（248B 协议口径）；多文件在 GitHub 浏览 / 下载，zip 快照留存于 docs/v2/2.0/" }
           ],
           "host": {
-            "ver": "2.1",
-            "offline": "release/电机上位机-v2.1.html",
-            "online": "release/电机上位机-v2.1-online.html",
+            "ver": "2.2",
+            "offline": "release/电机上位机-v2.2.html",
+            "online": "release/电机上位机-v2.2-online.html",
             "web": "web/v2/"
           }
         }
