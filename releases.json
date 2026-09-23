@@ -18,9 +18,9 @@
         { "name": "技术手册 v2.0.md", "href": "docs/technical-manual.md", "note": "硬件规格 / 接线 / 通信协议 / 底盘功能 / 固件升级 / 故障排查；v2.0 发布快照见 docs/v2/2.0/" },
         { "name": "技术手册 v2.0.pdf", "href": "docs/v2/2.0/MDC技术手册-v2.0.pdf", "note": "v2.0 随线发布 PDF 版" },
         { "name": "技术手册（AI用）.md", "href": "docs/v1/1.2/ai-manual.md", "note": "给 AI 快速理解与驱动本项目用的公开接口手册（英文），Vibe Coding 时直接投喂给 AI Agent 即可：无需源码就能正确连接设备、枚举能力、读写参数、控制电机、解析遥测与进入 bootloader；口径 v1：硬件 v1.1.x / 固件 v1.1.0 / 协议 D=1（v2 线权威接口口径以技术手册 v2.0 为准）；配套协议 JSON 见 docs/v1/1.2/protocol/" },
+        { "name": "二次开发手册 v1.0", "href": "docs/v2/devkit-1.0/firmware-dev-manual.md", "note": "固件二次开发参考：引脚分配 / 外设推荐配置（与出厂固件 v1.2.0 配置一致）/ Bootloader 布局；只含配置，不含出厂固件业务实现" },
         { "name": "例程 v2.0", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/2.0/examples", "note": "Python×6 + Arduino×1，248B 协议口径（D=2），字节级自测通过；多文件请在 GitHub 浏览 / 下载" },
         { "name": "API库 mdc_lib v2.0", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/mdc_lib", "note": "12 平台通用调用库；2026-09-12 与固件 v1.2.0 / 协议 D=2 的 248B 布局对齐（此前 231B 版本仅适配 v1.1.x 存档线）" },
-        { "name": "二次开发手册 v1.0", "href": "docs/v2/devkit-1.0/firmware-dev-manual.md", "note": "固件二次开发参考：引脚分配 / 外设推荐配置（与出厂固件 v1.2.0 配置一致）/ Bootloader 布局；只含配置，不含出厂固件业务实现" },
         { "name": "二次开发库 firmware-dev-kit v1.0", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/devkit-1.0/firmware-dev-kit", "note": "可直接编译的固件工程骨架：CubeMX .ioc + 外设初始化 + HAL + Makefile + 最小 demo，保留 Bootloader 兼容；多文件在 GitHub 浏览 / 下载" }
       ],
       "host_releases": [
@@ -113,8 +113,8 @@
             { "name": "技术手册 v2.0（本版随发）", "href": "docs/v2/2.0/technical-manual.md", "note": "v2.0 发布快照，永不覆盖" },
             { "name": "技术手册 v2.0 PDF", "href": "docs/v2/2.0/MDC技术手册-v2.0.pdf", "note": "v2.0 随线发布 PDF 版" },
             { "name": "技术手册（AI用）.md", "href": "docs/v1/1.2/ai-manual.md", "note": "给 AI 快速理解与驱动本项目用的公开接口手册（英文），Vibe Coding 时直接投喂给 AI Agent 即可：无需源码就能正确连接设备、枚举能力、读写参数、控制电机、解析遥测与进入 bootloader；口径 v1：硬件 v1.1.x / 固件 v1.1.0 / 协议 D=1（v2 线权威接口口径以技术手册 v2.0 为准）；配套协议 JSON 见 docs/v1/1.2/protocol/" },
-            { "name": "例程 v2.0（GitHub）", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/2.0/examples", "note": "Python×6 + Arduino×1（248B 协议口径）；多文件在 GitHub 浏览 / 下载，zip 快照留存于 docs/v2/2.0/" },
             { "name": "二次开发手册 v1.0", "href": "docs/v2/devkit-1.0/firmware-dev-manual.md", "note": "引脚分配 / 外设推荐配置 / Bootloader 布局（与出厂固件 v1.2.0 配置一致）；配套二次开发库使用" },
+            { "name": "例程 v2.0（GitHub）", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/2.0/examples", "note": "Python×6 + Arduino×1（248B 协议口径）；多文件在 GitHub 浏览 / 下载，zip 快照留存于 docs/v2/2.0/" },
             { "name": "二次开发库 v1.0", "href": "https://github.com/mumu-elec/mdc-pub/tree/master/docs/v2/devkit-1.0/firmware-dev-kit", "note": "可直接编译的固件工程骨架（CubeMX .ioc + 外设初始化 + HAL + Makefile + 最小 demo）；多文件在 GitHub 浏览 / 下载" }
           ],
           "host": {
