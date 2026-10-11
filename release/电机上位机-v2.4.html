@@ -649,6 +649,7 @@ body.perf-testing #timeline-bar{pointer-events:none;opacity:.45}
 <symbol id="i-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4.5H3l7.5 8.6v5.4l3 1.5v-6.9z"/></symbol>
 <symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3h5"/><path d="M10 3v5.2L4.7 18.1A1.8 1.8 0 0 0 6.3 21h11.4a1.8 1.8 0 0 0 1.6-2.9L14 8.2V3"/><path d="M7.2 15.5h9.6"/></symbol>
 <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 22 20H2z"/><path d="M12 9.5v4.5"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.8 5 5L19.5 6.5"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
 <symbol id="i-bolt" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13.2 2 3.8 13.6h6.3L10.8 22l9.4-11.6h-6.3z"/></symbol>
@@ -2621,7 +2622,8 @@ function handleTxInput(){
     let curVal=pi<argParts.length?argParts[pi]:'';
       let valid=p.type==='choice'?p.opts.includes(curVal):p.type==='int'?/^\d+$/.test(curVal):p.type==='float'?/^[\d.]+$/.test(curVal):true;
       if(!curVal)valid=true;
-      let vMark=curVal?(valid?'✅':'❌'):'';
+      const icSvgS=(id,c)=>'<svg class="ic" style="width:11px;height:11px;vertical-align:-1px;color:'+c+'"><use href="#'+id+'"/></svg>';
+      let vMark=curVal?(valid?icSvgS('i-check','var(--green-solid)'):icSvgS('i-x','var(--red)')):'';
       let usageDesc=exact.cmd+' '+exact.params.map((pp,i)=>i<argParts.length?argParts[i]:(pp.optional?'['+pp.name+']':'<'+pp.name+'>')).join(' ');
       let choicesHTML='';
       if(p.type==='choice'){
@@ -8055,7 +8057,7 @@ function toggleCtrlPanel() {
 
 
   if (!ctrlPanelVisible && typeof AutoTune !== 'undefined' && AutoTune.state === 'running') {
-    document.getElementById('status').textContent = '⚠ 整定进行中，暂不能打开控制面板';
+    document.getElementById('status').innerHTML = icSvg('i-warn') + ' 整定进行中，暂不能打开控制面板';
     return;
   }
 
@@ -8397,18 +8399,18 @@ const AutoTune = {
     }
     if (missing.length > 0) {
       warnEl.style.display = 'block';
-      warnEl.innerHTML = '⚠ 编码器 PPR 未设置：电机 <b>' + missing.join(', ') + '</b> — 请先在主面板设置 PPR';
+      warnEl.innerHTML = icSvg('i-warn', '#b7950b') + ' 编码器 PPR 未设置：电机 <b>' + missing.join(', ') + '</b> — 请先在主面板设置 PPR';
     } else warnEl.style.display = 'none';
   },
 
 
   async start() {
-    if (!writer) { document.getElementById('status').textContent = '⚠ 请先连接串口'; return; }
+    if (!writer) { document.getElementById('status').innerHTML = icSvg('i-warn') + ' 请先连接串口'; return; }
     if (this.state === 'running') return;
-    if (this._channels.size === 0) { this._setStatus('⚠ 请至少选择一个电机通道'); return; }
+    if (this._channels.size === 0) { this._setStatus(icSvg('i-warn') + ' 请至少选择一个电机通道'); return; }
     for (const ch of this._channels) {
       const cpr = parseInt(document.getElementById('cpr_' + ch).value) || 0;
-      if (cpr <= 0) { this._setStatus('⚠ 电机 ' + String.fromCharCode(65 + ch) + ' PPR 未设置'); return; }
+      if (cpr <= 0) { this._setStatus(icSvg('i-warn') + ' 电机 ' + String.fromCharCode(65 + ch) + ' PPR 未设置'); return; }
     }
     this._doPid = document.getElementById('tune-do-pid').classList.contains('sel');
     this._doFilter = document.getElementById('tune-do-filter').classList.contains('sel');
@@ -8466,12 +8468,12 @@ const AutoTune = {
         TuneExperiment.markDone();
         this.state = 'done';
         const pendingSuggested = acceptedChs.filter(ci => this._results[ci] && this._results[ci].filterSuggested).length;
-        this._setStatus('✅ ' + (acceptedChs.length - pendingSuggested) + '/' + chArr.length + ' 通道参数已应用（未通过通道已还原原配置）' +
+        this._setStatus(icSvg('i-check') + ' ' + (acceptedChs.length - pendingSuggested) + '/' + chArr.length + ' 通道参数已应用（未通过通道已还原原配置）' +
           (pendingSuggested ? '；' + pendingSuggested + ' 通道滤波器参数为建议/待确认，点击「应用」确认启用' : ''));
       } else {
         TuneExperiment.setPhase('FAILED');
         this.state = 'failed';
-        this._setStatus('⚠ 无通道通过最终验收（原配置已还原）。若整定参数仍想试用，可点击「应用」（未通过自动验收，请自行确认效果）');
+        this._setStatus(icSvg('i-warn') + ' 无通道通过最终验收（原配置已还原）。若整定参数仍想试用，可点击「应用」（未通过自动验收，请自行确认效果）');
       }
       this._setUI('idle'); this._setProgress(100, this.state === 'done' ? 'done' : 'failed'); this._setPhaseLabel('');
       if (typeof userScrolled !== 'undefined') userScrolled = false;
@@ -9947,14 +9949,14 @@ const AutoTune = {
       }
     }
     if (typeof rw === 'function') rw('write');
-    this._setStatus('✅ 参数已同步到 MCU 和主面板' +
+    this._setStatus(icSvg('i-check') + ' 参数已同步到 MCU 和主面板' +
       (forcedCount > 0 ? '（' + forcedCount + ' 通道未通过自动验收，已按你的要求应用——请注意观察实际效果，满意后可点「保存参数」写入 EEPROM）' : ''));
   },
 
   async save() {
     if (!writer) return;
     await this._sendCmd('/save');
-    this._setStatus('💾 已发送保存指令到 EEPROM');
+    this._setStatus(icSvg('i-save') + ' 已发送保存指令到 EEPROM');
     document.getElementById('status').textContent = '自动整定参数已保存到 EEPROM';
   },
 
@@ -10103,7 +10105,7 @@ const AutoTune = {
     const panel = document.getElementById('tune-panel');
     if (panel) panel.classList.add('tune-wide');
     const cell = (label, value) => '<div class="tune-res-cell"><label>' + label + '</label><b>' + value + '</b></div>';
-    let html = '<div style="font-weight:700;margin-bottom:6px;color:var(--accent)">📊 整定结果</div>';
+    let html = '<div style="font-weight:700;margin-bottom:6px;color:var(--accent)">' + icSvg('i-chart', 'var(--accent)') + ' 整定结果</div>';
     for (const ci of [...this._channels].sort()) {
       const r = this._results[ci];
       if (!r || !r.success) {
@@ -10111,7 +10113,7 @@ const AutoTune = {
         const dg = r && r.diagnostic;
         const fallbackTxt = (r && (r.error || r.failureType)) || '失败';
         html += '<div style="margin-bottom:8px;padding:6px 8px;border:1px solid var(--red);border-radius:6px;background:color-mix(in srgb,var(--red) 6%,transparent)">';
-        html += '<div style="color:var(--red);font-size:11px;font-weight:700">CH' + String.fromCharCode(65 + ci) + ' ❌ ' + (dg ? dg.title : fallbackTxt) + '</div>';
+        html += '<div style="color:var(--red);font-size:11px;font-weight:700">CH' + String.fromCharCode(65 + ci) + ' ' + icSvg('i-x') + ' ' + (dg ? dg.title : fallbackTxt) + '</div>';
         if (dg) {
           if (dg.detail) html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">判定依据: ' + dg.detail + '</div>';
           html += '<div style="font-size:10px;margin-top:4px"><b>可能原因:</b><br>' + dg.causes.map(c => '· ' + c).join('<br>') + '</div>';
@@ -10127,7 +10129,7 @@ const AutoTune = {
         head.map(h2 => '<span class="h">' + h2 + '</span>').join('') +
         vals.map(v2 => '<b>' + v2 + '</b>').join('') + '</div>';
       if (r.speedTuned && r.tunedKp !== undefined) {
-        html += (r.converged ? ' <span style="color:var(--green)">✅ 已收敛</span>' : ' <span style="color:#b7950b">⚠ 未完全收敛</span>');
+        html += (r.converged ? ' <span style="color:var(--green)">' + icSvg('i-check') + ' 已收敛</span>' : ' <span style="color:#b7950b">' + icSvg('i-warn') + ' 未完全收敛</span>');
         if (r.iterations !== undefined) html += ' <span style="color:var(--muted);font-size:10px">共' + r.iterations + '轮</span>';
         html += '</div>';
         html += '<div class="tune-res-sec">PID 参数</div>' + resTable(4,
@@ -10159,7 +10161,7 @@ const AutoTune = {
       }
       if (r.advisories && r.advisories.length) {
         for (const ad of r.advisories) {
-          html += ' <div style="font-size:10px;color:#b7950b;margin-top:2px">⚠ ' + ad.title + (ad.detail ? '：' + ad.detail : '') + '</div>';
+          html += ' <div style="font-size:10px;color:#b7950b;margin-top:2px">' + icSvg('i-warn', '#b7950b') + ' ' + ad.title + (ad.detail ? '：' + ad.detail : '') + '</div>';
           if (ad.solutions && ad.solutions.length) html += ' <div style="font-size:9px;color:var(--muted)">' + ad.solutions[0] + '</div>';
         }
       }
@@ -10167,7 +10169,7 @@ const AutoTune = {
       html += '<details style="margin-top:3px"><summary style="cursor:pointer;font-size:10px;color:var(--muted);user-select:none;outline:none">详细数据 ▸</summary><div style="font-size:10px;color:var(--muted);margin-top:3px;line-height:1.6">';
       if (r.measurement) {
         const m = r.measurement;
-        html += '测速: ' + (m.ok ? '✅' : '⚠') +
+        html += '测速: ' + (m.ok ? icSvg('i-check') : icSvg('i-warn', '#b7950b')) +
           ' 分辨率=' + (Number.isFinite(m.resolutionRPM) ? m.resolutionRPM.toFixed(1) : '--') + 'rpm/脉冲 每周期脉冲=' + m.pulsesPerPeriod.toFixed(1) +
           ' 噪声std=' + m.stdRPM.toFixed(1) + ' vpp=' + m.vppRPM.toFixed(1);
         if (m.issues && m.issues.length) html += '；' + m.issues.join('; ');
@@ -10191,7 +10193,7 @@ const AutoTune = {
         if (f && f.accepted !== false && r.filterType > 0) {
           const fprm = TuneEngine.filterParams({ type: r.filterType, win: r.filterWin }, (this._backupAll && this._backupAll[ci]) ? (this._backupAll[ci].period || 10) : 10);
           html += '滤波器: ' + (['无', '滑动平均', '一阶低通', '中值'][r.filterType] || '?') + ' w=' + r.filterWin +
-            ' ✅ NR=' + (f.noiseReduction !== undefined ? f.noiseReduction.toFixed(1) : (r.fvNoiseReduction || 0).toFixed(1)) + '%' +
+            ' ' + icSvg('i-check') + ' NR=' + (f.noiseReduction !== undefined ? f.noiseReduction.toFixed(1) : (r.fvNoiseReduction || 0).toFixed(1)) + '%' +
             (fprm.fcHz > 0 ? ' fc=' + fprm.fcHz.toFixed(1) + 'Hz' + (fprm.alpha > 0 ? ' α=' + fprm.alpha.toFixed(3) : '') + ' τf=' + fprm.tauFms.toFixed(0) + 'ms 延迟=' + fprm.delayMs.toFixed(0) + 'ms Ts=' + fprm.Tms + 'ms' : '');
           if (r.jointVerification) html += ' 联合:' + r.jointVerification.compatibility;
           html += '<br>';
@@ -10211,7 +10213,7 @@ const AutoTune = {
             ' fc=' + fc.filter_cutoff_frequency.toFixed(1) + 'Hz τf=' + fc.filter_time_constant.toFixed(0) + 'ms α=' + fc.filter_alpha.toFixed(3) +
             ' 延迟=' + fc.filter_delay_ms.toFixed(0) + 'ms)';
         }
-        if (r.filterSuggested) html += ' ⚠ 新滤波器参数为建议/待确认（未自动覆盖原配置）';
+        if (r.filterSuggested) html += ' ' + icSvg('i-warn', '#b7950b') + ' 新滤波器参数为建议/待确认（未自动覆盖原配置）';
         if (r.filterAskDeclined) html += ' (用户选择不整定滤波器，保持原配置)';
         if (r.filterRetuneSkip) html += ' ' + r.filterRetuneSkip;
         html += '<br>';
@@ -10220,7 +10222,7 @@ const AutoTune = {
         const ia = r.pidIssueAnalysis;
         const bad = ia.issues.filter(i => i.verdict === 'BAD').map(i => i.label + ':' + i.value);
         html += '<span style="color:' + (ia.ok ? 'var(--green)' : '#b7950b') + '">效果分析: ' +
-          (ia.ok ? '达标' : (bad.length ? '⚠ ' + bad.join('; ') : '⚠ 见备注')) +
+          (ia.ok ? '达标' : (bad.length ? icSvg('i-warn', '#b7950b') + ' ' + bad.join('; ') : icSvg('i-warn', '#b7950b') + ' 见备注')) +
           (ia.filterRelated ? ' (与测速/滤波相关: ' + (ia.filterReasons || []).join('; ') + ')' : '') + '</span><br>';
       }
       html += '</div></details>';
@@ -10260,7 +10262,7 @@ const AutoTune = {
       if (prog && (this.state === 'idle' || this.state === 'failed')) prog.style.display = 'none';
     }
   },
-  _setStatus(msg) { const el = document.getElementById('tune-status-text'); if (el) el.textContent = msg; },
+  _setStatus(msg) { const el = document.getElementById('tune-status-text'); if (el) el.innerHTML = msg; },
   _setProgress(pct, cls) { const bar = document.getElementById('tune-progress-bar'); if (bar) { bar.style.width = Math.round(pct) + '%'; bar.className = cls; } },
   _setPhaseLabel(msg) {
     const el = document.getElementById('tune-phase-label');
@@ -10386,6 +10388,12 @@ function _median(a) { const s = [...a].sort((x, y) => x - y); const n = s.length
 function _normStd(a) { const m = mean(a); return Math.abs(m) > 1e-9 ? std(a) / Math.abs(m) : 0; }
 
 
+
+
+
+function icSvg(id, color) {
+  return '<svg class="ic" style="width:12px;height:12px;vertical-align:-2px;flex:none;' + (color ? 'color:' + color + ';' : '') + '"><use href="#' + id + '"/></svg>';
+}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
