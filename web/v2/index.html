@@ -636,7 +636,7 @@ body.perf-testing #timeline-bar{pointer-events:none;opacity:.45}
 
 <div id="left">
   <div id="left-header">
-  <div id="ver-info"><span>上位机 v2.3 | 硬件 -- | 固件 --</span> <span class="tip" data-tip-key="versionTip">?</span></div>
+  <div id="ver-info"><span>上位机 v2.4 | 硬件 -- | 固件 --</span> <span class="tip" data-tip-key="versionTip">?</span></div>
   <button class="btn-danger" onclick="toggleSerial()" id="btn-connect" style="width:100%;padding:9px 0;border-radius:7px;font-size:13px;font-weight:600;border:none"><svg class="ic"><use href="#i-plug"/></svg> 未连接</button>
   <div id="status" style="margin:3px 0"></div>
   </div>
@@ -1391,7 +1391,7 @@ const UI_TEXT = {
 <script>
 
 
-const HOST_VER = {A:1, B:2, C:3};
+const HOST_VER = {A:1, B:2, C:4};
 
 
 const SYNC=0xAA, CMD_READ=0x10, CMD_WRITE=0x11, CMD_WRITE_FIELD=0x12, CMD_SAVE=0x20, CMD_SUB=0x40, CMD_UNSUB=0x41, CMD_DBG=0x43, CMD_DBG_SPEED=0x44, CMD_ENTER_BL=0x52, CMD_REBOOT=0x53, CONFIG_SIZE=248;
@@ -3291,7 +3291,9 @@ function uiDiffersFromDevice(){
   }
   return false;
 }
+let MDC_VER=null;
 function updateVerInfo(hwA, hwB, hwC, swD, swE, fwA){
+  MDC_VER={hwA:hwA,hwB:hwB,hwC:hwC,swD:swD,swE:swE,fwA:fwA||0};
   let vi=document.getElementById('ver-info');
   if(!vi)return;
 
@@ -5996,6 +5998,416 @@ if (typeof window !== 'undefined') window.TuneSafety = TuneSafety;
 
 
 
+
+'use strict';
+
+const TuneDiag = {
+
+
+
+  DIAG: {
+
+    DIRECTION_REVERSED: {
+      title: '电机转向与指令相反（方向反转）',
+      severity: 'error',
+      causes: [
+        '电机两根引线接反（或编码器装在对面轴且极性相反）',
+        '上位机「引脚反转」勾选与实际接线不符',
+        '「编码器极性」勾选与编码器 A/B 相序不符',
+        '固件配置被导入过他人/其他通道的配置（motor_invert 位）'
+      ],
+      solutions: [
+        '手动/开环模式给 +30% 指令，观察物理转向与曲线符号是否一致',
+        '物理转向反 → 勾选该通道「引脚反转」（或对调电机两根线）',
+        '物理转向正但曲线为负 → 勾选「编码器极性」（或对调编码器 A/B 相线）',
+        '只改一个层面（配置或接线二选一），两处都改等于没改',
+        '改完点「同步参数」写入设备后重新整定'
+      ]
+    },
+    FEEDBACK_SIGN_MIXED: {
+      title: '转速反馈方向不一致（疑似反馈异常）',
+      severity: 'warn',
+      causes: [
+        '编码器信号线虚接/受干扰（转速过零抖动、符号跳变）',
+        '低速段编码器分辨率不足，测速值在 0 附近正负跳变',
+        '联轴器/负载打滑，低速正反程不一致'
+      ],
+      solutions: [
+        '检查编码器接线与屏蔽（远离电机动力线）',
+        '增大激励档（速度环高级设置）后重试，避开低速量化区',
+        '若持续出现，导出数据并联系技术支持'
+      ]
+    },
+    MOTOR_NO_RESPONSE: {
+      title: '电机未转动或几乎无响应',
+      severity: 'error',
+      causes: [
+        '机械堵转（轴/减速箱/联轴器卡死，指令切换瞬间仅抖动）',
+        '供电不足（电压偏低或电源限流，起动瞬间被拉垮）',
+        '电机引线一根虚接/断开',
+        '整定期间控制面板等其他指令源同时发送，覆盖了整定指令',
+        '驱动输出未使能或控制模式配置错误'
+      ],
+      solutions: [
+        '整定前关闭控制面板（程序已自动关闭，确认无其他上位机/遥控接入）',
+        '断电用手转电机轴，检查是否卡死',
+        '手动/开环模式给 30% 指令：不转 → 查供电（整定中量电压是否被拉垮）与电机线',
+        '手动模式能转但整定仍失败 → 导出数据并联系技术支持'
+      ]
+    },
+    MODEL_LINEARITY_POOR: {
+      title: '模型线性度不足（转速与指令不成线性）',
+      severity: 'error',
+      causes: [
+        '负载非线性（摩擦随速度剧变、间隙、弹性负载）',
+        '速度环本身振荡，稳态值不可信',
+        '滤波器引入非线性/过度延迟，稳态判据失真',
+        '编码器测速在低速段量化失真'
+      ],
+      solutions: [
+        '检查机械传动是否顺畅、有无间隙/卡滞',
+        '若配置了滤波器，先按「仅整定速度PID」（滤波器=不整定）重试',
+        '降低/提高激励档避开问题区间后重试',
+        '导出数据查看各工作点分布后联系技术支持'
+      ]
+    },
+    TAU_INVALID: {
+      title: '无法测得有效时间常数',
+      severity: 'error',
+      causes: [
+        '阶跃响应过快（采样率不足，上升过程只有 1~2 个样本）',
+        '阶跃响应过慢/振荡，拟合不收敛',
+        '稳态样本过少即被超时截断'
+      ],
+      solutions: [
+        '检查速度环周期设置是否过大（建议 5~20ms）',
+        '若电机响应极快属正常现象，可降低激励档重试',
+        '导出数据查看阶跃波形后联系技术支持'
+      ]
+    },
+
+
+    VERIFY_FEEDBACK_LOST: {
+      title: '闭环验证期间转速反馈中断',
+      severity: 'error',
+      causes: [
+        'USB/串口连接断开或驱动异常',
+        '固件复位（大电流导致电压跌落、看门狗等）',
+        'RPM 状态流订阅中断'
+      ],
+      solutions: [
+        '重新连接串口后重试',
+        '观察设备指示灯是否在整定中重启（重启=供电问题，先换大电流电源）',
+        '确认上位机 RPM 按钮处于开启状态'
+      ]
+    },
+    VERIFY_DIRECTION_FLYWHEEL: {
+      title: '闭环起步即反向飞车（方向反转+正反馈）',
+      severity: 'error',
+      causes: [
+        '电机转向与编码器反馈方向相反（同 DIRECTION_REVERSED）',
+        '速度环极性错误：反馈反号 → 误差越控越大 → 输出饱和'
+      ],
+      solutions: [
+        '立即手动归零并断电检查机械（飞车可能已触发限流）',
+        '按 DIRECTION_REVERSED 的方案修正方向后重新整定',
+        '修正方向前切勿再进入速度闭环'
+      ]
+    },
+    VERIFY_OVERSPEED: {
+      title: '闭环转速超出安全上限',
+      severity: 'error',
+      causes: [
+        '编码器 PPR 配置与实际不符（显示转速虚高数倍）',
+        '验证目标过高或输出限幅(ilim)过大',
+        '速度环参数过激导致失控'
+      ],
+      solutions: [
+        '核对主面板「输入轴编码器线数」与电机实际编码器一致',
+        '降低激励档（速度环高级设置）后重试',
+        '适当调小输出限幅后重试'
+      ]
+    },
+    VERIFY_FAIL: {
+      title: '闭环验证未达成目标',
+      severity: 'error',
+      causes: [
+        'PID 参数与本电机/负载不匹配',
+        '负载惯量或摩擦超出预想',
+        '目标转速处于测速不可靠区（每周期脉冲过少）'
+      ],
+      solutions: [
+        '重试一次整定（结果可能受初始状态影响）',
+        '导出数据查看闭环阶跃波形后联系技术支持'
+      ]
+    },
+    STOP_MAX_ITER: {
+      title: '达到最大迭代轮数仍未达标',
+      severity: 'error',
+      causes: [
+        '验收标准（调节时间/超调/稳态误差）对当前负载过严',
+        '机械非线性（死区大/摩擦大）限制了可达指标',
+        '执行器输出饱和，参数调整空间不足'
+      ],
+      solutions: [
+        '适当放宽验收标准（期望调节时间/超调上限/稳态误差）后重试',
+        '采用最后一轮或历史最佳参数（结果面板可见各轮指标）',
+        '若超调始终偏大：手动减小 Kp 或增大 Kd 微调'
+      ]
+    },
+    TARGETS_INVALID: {
+      title: '无法生成合法的闭环验证目标',
+      severity: 'error',
+      causes: [
+        '辨识模型工作速度/增益过低，任何目标都低于可靠最小转速',
+        '死区过大挤占了可用工作区间'
+      ],
+      solutions: [
+        '检查编码器 PPR 与速度环周期配置',
+        '检查机械负载是否过重，或提高激励档重试'
+      ]
+    },
+
+
+    SAFETY_STALL: {
+      title: '堵转保护触发（有指令但无转动）',
+      severity: 'error',
+      causes: [
+        '机械堵转或负载卡死',
+        '死区大于激励档（电机推不动）',
+        '供电严重不足'
+      ],
+      solutions: [
+        '断电检查机械传动',
+        '在速度环高级设置中提高激励档后重试',
+        '测量电机端电压确认供电能力'
+      ]
+    },
+    SAFETY_NO_RPM_FEEDBACK: {
+      title: '速度闭环下转速反馈超时',
+      severity: 'error',
+      causes: [
+        '遥测流中断（USB 掉线/固件复位）',
+        '速度闭环未真正生效（模式切换失败）',
+        '编码器无输出（编码器线断/供电异常）'
+      ],
+      solutions: [
+        '重新连接串口，确认 RPM 曲线有数据后重试',
+        '观察设备指示灯是否重启',
+        '检查编码器接线'
+      ]
+    },
+    SAFETY_COMM_ERROR: {
+      title: '串口通信超时',
+      severity: 'error',
+      causes: [
+        'USB 线缆/ hub 接触不良或掉线',
+        '固件复位（供电电压跌落）',
+        '系统 USB 节能挂起'
+      ],
+      solutions: [
+        '更换 USB 口/短一点的数据线，避免经过 hub',
+        '关闭系统对 USB 的节能挂起',
+        '检查供电（大电流工况下电压跌落会导致 MCU 复位）'
+      ]
+    },
+    SAFETY_MAX_TEST_TIME: {
+      title: '单阶段超时（长时间未完成）',
+      severity: 'error',
+      causes: [
+        '闭环振荡迟迟不进入稳态带',
+        '目标转速不可达（输出饱和）',
+        '噪声过大，判稳条件难满足'
+      ],
+      solutions: [
+        '放宽验收标准（增大期望调节时间/超调上限）后重试',
+        '配置适当的速度滤波后重试',
+        '检查机械负载与供电'
+      ]
+    },
+    SAFETY_MAX_RPM: {
+      title: '转速超出安全上限（保护性停机）',
+      severity: 'error',
+      causes: [
+        '方向反转进闭环（正反馈飞车）——若曲线显示转速符号与目标相反即可确认',
+        '编码器 PPR 配错导致显示转速虚高',
+        '速度环参数过激'
+      ],
+      solutions: [
+        '查看导出数据的闭环验证波形：转速反号 → 按 DIRECTION_REVERSED 方案修正方向',
+        '核对编码器 PPR 配置',
+        '调小输出限幅后重试'
+      ]
+    },
+    SAFETY_ABNORMAL_RPM: {
+      title: '转速异常（超出绝对保护线）',
+      severity: 'error',
+      causes: [
+        '编码器 PPR 严重配错（显示值放大数倍）',
+        '编码器信号受强干扰产生假脉冲'
+      ],
+      solutions: [
+        '核对编码器 PPR 配置',
+        '检查编码器线屏蔽与接线',
+        '手动模式观察各转速下显示值是否与实际成比例'
+      ]
+    },
+    SAFETY_OUT_OF_RANGE: {
+      title: '内部指令超限（保护性停机）',
+      severity: 'error',
+      causes: ['软件内部状态异常（不应出现，请反馈给开发者）'],
+      solutions: ['导出数据并联系技术支持，附导出的 CSV']
+    },
+    USER_ABORT: {
+      title: '用户手动中止',
+      severity: 'warn',
+      causes: ['用户点击了「中止」按钮'],
+      solutions: ['如需继续请重新整定']
+    },
+
+
+    DEADZONE_ASYMMETRIC: {
+      title: '正反向死区不对称',
+      severity: 'warn',
+      causes: [
+        '单方向机械阻力大（联轴器偏心/齿轮单边啮合）',
+        '驱动半桥单边性能异常',
+        '停机惯性扫过零速被误记（正向死区偏大即可信度低）'
+      ],
+      solutions: [
+        '手动模式分别正反低速试转，对比起动顺畅度',
+        '若机械无异常可忽略此提示继续使用'
+      ]
+    },
+    CROSS_VALIDATION_FAIL: {
+      title: '模型交叉验证未通过（外推偏差大）',
+      severity: 'warn',
+      causes: [
+        '系统线性度在高低负载间变化大',
+        '整定过程中负载状态发生改变'
+      ],
+      solutions: [
+        '固定负载后重试整定',
+        '结合闭环验证指标判断参数可用性（通过即可放心使用）'
+      ]
+    },
+    GAIN_ASYMMETRY: {
+      title: '正反向增益差异过大',
+      severity: 'warn',
+      causes: [
+        '机械摩擦正反向不一致',
+        '驱动半桥正反向性能差异',
+        '单方向进入饱和'
+      ],
+      solutions: [
+        '检查机械与供电',
+        '差异不影响闭环验证通过时可忽略'
+      ]
+    },
+    UNKNOWN: {
+      title: '整定失败（未知原因）',
+      severity: 'error',
+      causes: ['未识别的异常形态'],
+      solutions: ['导出数据（含原始采样与诊断上下文）并联系技术支持']
+    }
+  },
+
+
+
+  diagnose(code, extra) {
+    const entry = this.DIAG[code] || null;
+    const out = entry
+      ? Object.assign({ code, title: entry.title, severity: entry.severity, causes: entry.causes.slice(), solutions: entry.solutions.slice() }, extra || {})
+      : Object.assign({ code: 'UNKNOWN', title: this.DIAG.UNKNOWN.title, severity: 'error', causes: this.DIAG.UNKNOWN.causes.slice(), solutions: this.DIAG.UNKNOWN.solutions.slice(), detail: { fromCode: code } }, extra || {});
+    return out;
+  },
+
+
+
+  checkDirection(workpoints, fwdFit, revFit) {
+    const pts = (workpoints || []).filter(w => w && w.success === true && Math.abs(w.rpm) > 1e-6);
+    const parts = [];
+
+
+    let reversedByFit = false;
+    if (fwdFit && fwdFit.K !== undefined) {
+      parts.push('正向斜率' + (fwdFit.K > 0 ? '+' : '') + fwdFit.K.toFixed(2));
+      if (fwdFit.K < 0) reversedByFit = true;
+    }
+    if (revFit && revFit.K !== undefined) {
+      parts.push('反向斜率' + (revFit.K > 0 ? '+' : '') + revFit.K.toFixed(2) + '(反向为正是异常)');
+      if (revFit.K > 0) reversedByFit = true;
+    }
+    if (reversedByFit) return { code: 'DIRECTION_REVERSED', mixed: false, evidence: parts.join(' ') };
+
+    if (pts.length >= 2) {
+      const wrong = pts.filter(w => (w.rpm > 0) !== (w.pwm > 0));
+      if (wrong.length === pts.length) {
+        return { code: 'DIRECTION_REVERSED', mixed: false, evidence: '全部' + pts.length + '个有效工作点转速与指令反号' };
+      }
+      if (wrong.length > 0) {
+        return { code: 'FEEDBACK_SIGN_MIXED', mixed: true, evidence: wrong.length + '/' + pts.length + '个工作点转速与指令反号' };
+      }
+    }
+
+    return { code: null, mixed: false, evidence: parts.join(' ') };
+  },
+
+
+
+  classifyVerifyFailure(samples, target, ctx) {
+    const s = samples || [];
+    const t = Math.abs(target || 0);
+    if (s.length < 3) return { code: 'VERIFY_FEEDBACK_LOST', detail: '窗口内样本数=' + s.length + '（遥测中断）' };
+    const maxAbs = Math.max.apply(null, s.map(x => Math.abs(x.rpm)));
+    if (maxAbs < 5) return { code: 'MOTOR_NO_RESPONSE', detail: '窗口内最大|转速|=' + maxAbs.toFixed(0) + 'rpm（闭环指令未产生运动）' };
+
+    const opposite = s.filter(x => t > 0 && Math.abs(x.rpm) >= 5 && (x.rpm > 0) !== (target > 0));
+    const maxOpp = opposite.length ? Math.max.apply(null, opposite.map(x => Math.abs(x.rpm))) : 0;
+    if (maxOpp > 2 * t) {
+      return { code: 'VERIFY_DIRECTION_FLYWHEEL', detail: '目标 ' + Math.round(target) + 'rpm，反向最大 ' + Math.round(maxOpp) + 'rpm（正反馈飞车特征）' };
+    }
+    const maxRPM = (ctx && ctx.maxRPM) || 0;
+    if (maxRPM > 0 && maxAbs > maxRPM) {
+      return { code: 'VERIFY_OVERSPEED', detail: '最大|转速|=' + Math.round(maxAbs) + 'rpm > 上限 ' + Math.round(maxRPM) + 'rpm' };
+    }
+    if (opposite.length && maxOpp > t * 0.5) {
+      return { code: 'VERIFY_DIRECTION_FLYWHEEL', detail: '目标 ' + Math.round(target) + 'rpm，反向最大 ' + Math.round(maxOpp) + 'rpm（疑似方向反转）' };
+    }
+    return { code: 'VERIFY_FAIL', detail: '最大|转速|=' + Math.round(maxAbs) + 'rpm，目标 ' + Math.round(target) + 'rpm' };
+  },
+
+
+  safetyCode(reason) {
+    const known = ['STALL', 'NO_RPM_FEEDBACK', 'COMM_ERROR', 'COMMUNICATION_ERROR', 'MAX_TEST_TIME', 'MAX_RPM', 'ABNORMAL_RPM', 'OUT_OF_RANGE'];
+    if (!reason) return 'USER_ABORT';
+    if (reason === 'COMMUNICATION_ERROR') return 'SAFETY_COMM_ERROR';
+    if (known.indexOf(reason) >= 0) return 'SAFETY_' + reason;
+    return 'UNKNOWN';
+  },
+
+
+  fromStopReason(stopReason) {
+    if (!stopReason) return 'UNKNOWN';
+    if (stopReason.indexOf('无RPM反馈') >= 0) return 'VERIFY_FEEDBACK_LOST';
+    if (stopReason.indexOf('无合法验证目标') >= 0 || stopReason.indexOf('可靠') >= 0) return 'TARGETS_INVALID';
+    if (stopReason.indexOf('最大迭代') >= 0) return 'STOP_MAX_ITER';
+    return 'UNKNOWN';
+  }
+};
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { TuneDiag };
+if (typeof window !== 'undefined') window.TuneDiag = TuneDiag;
+
+</script>
+<script>
+
+
+
+
+
+
+
 'use strict';
 
 function _deepClone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -6322,7 +6734,9 @@ const TuneLog = {
   defaultMeta(extra) {
     const m = {
       tool: 'motor-driver-host auto-tune',
-      hostVersion: (typeof HOST_VER !== 'undefined' && HOST_VER) ? (HOST_VER.A + '.' + HOST_VER.B + '.' + HOST_VER.C) : '',
+
+
+      hostVersion: (typeof HOST_VER !== 'undefined' && HOST_VER) ? ('v' + HOST_VER.B + '.' + HOST_VER.C) : '',
       exportedAt: new Date().toISOString(),
       notes: '任务书 §29 原始实验数据'
     };
@@ -7991,6 +8405,12 @@ function toggleCtrlPanel() {
   let btn = document.getElementById('ctrl-panel-btn');
   if (!panel || !btn) return;
 
+
+  if (!ctrlPanelVisible && typeof AutoTune !== 'undefined' && AutoTune.state === 'running') {
+    document.getElementById('status').textContent = '⚠ 整定进行中，暂不能打开控制面板';
+    return;
+  }
+
   ctrlPanelVisible = !ctrlPanelVisible;
   if (ctrlPanelVisible) {
 
@@ -8186,6 +8606,8 @@ const AutoTune = {
   _tunedTau: 0,
   _vmaxRPM: 0,
   _verifyTarget: 0,
+  _lastVerifySamples: [],
+  _lastVerifyTarget: 0,
   _stepResults: [],
 
   _backupAll: null,
@@ -8360,6 +8782,15 @@ const AutoTune = {
       ' ptype=' + (this._ptype ? '增量' : '位置') + ' pwm=' + this._stepPwm +
       ' 标准: ts≈' + this._speedSettleMs + 'ms os≤' + this._targetOS + '% se≤' + this._targetSE + '%');
 
+
+
+
+
+    if (ctrlPanelVisible) {
+      toggleCtrlPanel();
+      await sleep(350);
+    }
+
     this._setUI('running'); this._setStatus('正在准备...'); this._setProgress(0, 'running');
     this._setPhaseLabel(''); this.state = 'running';
     this._startSafety();
@@ -8431,6 +8862,9 @@ const AutoTune = {
       this._subBoosted = true;
     }
 
+
+    if (typeof subKeepAlive !== 'undefined' && subKeepAlive) { clearInterval(subKeepAlive); subKeepAlive = null; }
+
     this._logSeries = [];
     this._tuneStartTick = performance.now();
     if (typeof switchTab === 'function') switchTab('chart');
@@ -8495,6 +8929,13 @@ const AutoTune = {
     if (this._subBoosted && typeof sendFrame === 'function' && typeof CMD_SUB !== 'undefined') {
       try { sendFrame(CMD_SUB, [50, 0], 'auto'); } catch (e) {}
       this._subBoosted = false;
+
+      if ((typeof rpmEnabled === 'undefined' || rpmEnabled) && typeof subKeepAlive !== 'undefined') {
+        if (subKeepAlive) clearInterval(subKeepAlive);
+        subKeepAlive = setInterval(() => {
+          if (writer && serialState === 'normal' && !isBootloaderMode) sendFrame(CMD_SUB, [50, 0], 'auto').catch(() => {});
+        }, 5000);
+      }
     }
     if (this._aborted) {
       const prevAborted = this._aborted;
@@ -8644,20 +9085,70 @@ const AutoTune = {
 
     const model = this._model;
     this._results[ch].identification = model;
+
+    this._results[ch].workpoints = (this._workpoints || []).map(w => ({
+      pwm: w.pwm, rpm: Math.round(w.rpm || 0), tau: Math.round(w.tau || 0),
+      R2: +Number(w.R2 === undefined ? 0 : w.R2).toFixed(3), ok: w.success === true
+    }));
+
+
+    const dirChk = TuneDiag.checkDirection(this._workpoints, model ? model.fwdFit : null, model ? model.revFit : null);
+    if (dirChk.code === 'DIRECTION_REVERSED') {
+      console.warn('[AutoTune] 方向反转:', dirChk.evidence);
+      const dg = TuneDiag.diagnose('DIRECTION_REVERSED', { detail: dirChk.evidence });
+      this._results[ch].success = false;
+      this._results[ch].failureType = 'DIRECTION_REVERSED';
+      this._results[ch].stopReason = dg.title;
+      this._results[ch].diagnostic = dg;
+      this._results[ch].error = dg.title + '（' + dirChk.evidence + '）';
+      TuneExperiment.failChannel(ch, 'DIRECTION_REVERSED');
+
+      if (mode === 'auto_tuned') {
+        const b = this._backupAll && this._backupAll[ch];
+        if (b) { this._aborted = false; await this._restoreChannelToRAM(ch, b); }
+      }
+      this._setStatus('CH' + String.fromCharCode(65 + ch) + ' ' + dg.title + '，已中止整定');
+      return;
+    }
     if (!model || !model.valid) {
       console.warn('[AutoTune] 系统辨识无效 → 模型不适用', model && model.modelWarning);
+
+      const warn = model ? (model.modelWarning || []) : [];
+      const has = (kw) => warn.some(w => w.indexOf(kw) >= 0);
+      let dcode = 'MODEL_LINEARITY_POOR';
+      if (has('工作点')) dcode = 'MOTOR_NO_RESPONSE';
+      else if (has('R2')) dcode = 'MODEL_LINEARITY_POOR';
+      else if (has('τ')) dcode = 'TAU_INVALID';
+      else if (has('增益')) dcode = 'MOTOR_NO_RESPONSE';
+      const dg = TuneDiag.diagnose(dcode, { detail: warn.join('、') });
       this._results[ch].success = false;
       this._results[ch].failureType = 'MODEL_FIT_POOR';
-      this._results[ch].error = '当前电机/负载不满足一阶线性模型假设' + (model ? '：' + model.modelWarning.join(',') : '');
+      this._results[ch].stopReason = dg.title;
+      this._results[ch].diagnostic = dg;
+      this._results[ch].error = dg.title + (warn.length ? '：' + warn.join('、') : '');
       TuneExperiment.failChannel(ch, 'MODEL_FIT_POOR');
 
       if (mode === 'auto_tuned') {
         const b = this._backupAll && this._backupAll[ch];
         if (b) { this._aborted = false; await this._restoreChannelToRAM(ch, b); }
       }
-      this._setStatus('CH' + String.fromCharCode(65 + ch) + ' 系统辨识无效（' + this._results[ch].failureType + '），跳过整定');
+      this._setStatus('CH' + String.fromCharCode(65 + ch) + ' ' + dg.title + '，跳过整定');
       return;
     }
+
+    const advisories = [];
+    if (dirChk.mixed) advisories.push(TuneDiag.diagnose('FEEDBACK_SIGN_MIXED', { detail: dirChk.evidence }));
+    const dzF = this._deadzone.fwd || 0, dzR = this._deadzone.rev || 0;
+    if ((dzF > 0) !== (dzR > 0) || (dzF > 0 && dzR > 0 && Math.max(dzF, dzR) > 2 * Math.min(dzF, dzR))) {
+      advisories.push(TuneDiag.diagnose('DEADZONE_ASYMMETRIC', { detail: '正向死区=' + dzF.toFixed(0) + ' 反向死区=' + dzR.toFixed(0) }));
+    }
+    if (model.crossValidate && model.crossValidate.ok === false) {
+      advisories.push(TuneDiag.diagnose('CROSS_VALIDATION_FAIL', { detail: Number.isFinite(model.crossValidate.maxErrPct) ? '外推最大误差 ' + model.crossValidate.maxErrPct.toFixed(0) + '%' : '' }));
+    }
+    if (model.asymmetryWarning && model.asymmetryWarning.length) {
+      advisories.push(TuneDiag.diagnose('GAIN_ASYMMETRY', { detail: model.asymmetryWarning.join('、') }));
+    }
+    if (advisories.length) this._results[ch].advisories = advisories;
     console.log('[AutoTune] 辨识有效: K=' + model.K.toFixed(3) + ' B=' + model.B.toFixed(1) +
       ' R2=' + model.R2.toFixed(3) + ' τ=' + model.tau.toFixed(0) + 'ms 角度差异=' + model.kAsymmetry.toFixed(2) +
       ' 滤波条件=' + mode);
@@ -8917,6 +9408,7 @@ const AutoTune = {
       this._results[ch].converged = false;
       this._results[ch].iterations = 0;
       this._results[ch].stopReason = targets.reason || '无合法验证目标';
+      this._results[ch].diagnostic = TuneDiag.diagnose('TARGETS_INVALID', { detail: targets.reason || '' });
       console.warn('[AutoTune] 无合法验证目标: ' + targets.reason);
       return;
     }
@@ -8935,7 +9427,22 @@ const AutoTune = {
       const tgt = targets.list[0];
       const m = await this._runClosedLoopStep(ch, tgt);
       if (this._aborted) return;
-      if (m === null) { this._results[ch].verifyOvershoot = -1; this._results[ch].verifySettleTime = -1; stopReason = '无RPM反馈'; break; }
+      if (m === null) {
+        this._results[ch].verifyOvershoot = -1; this._results[ch].verifySettleTime = -1;
+        if (this._results[ch].stopReason) {
+
+
+          stopReason = this._results[ch].stopReason;
+        } else {
+
+          const th = TuneSafety.thresholds({ olim, vmax: this._vmaxRPM || 20000 });
+          const vf = TuneDiag.classifyVerifyFailure(this._lastVerifySamples, tgt, { maxRPM: th.maxRPM });
+          const dg = TuneDiag.diagnose(vf.code, { detail: vf.detail });
+          this._results[ch].diagnostic = dg;
+          stopReason = dg.title + (vf.detail ? '（' + vf.detail + '）' : '');
+        }
+        break;
+      }
       const os = m.overshootPct, se = m.steadyErrPct, rawSt = m.settled ? m.settleTime : 0;
       const st = rawSt > 0 ? rawSt : 9999;
       const osc = m.oscillations;
@@ -8969,7 +9476,15 @@ const AutoTune = {
       }
       this._results[ch].converged = false;
       this._results[ch].iterations = this._iterRound + 1;
-      this._results[ch].stopReason = stopReason || ('达到最大迭代 ' + this._maxIterations + ' 轮仍未达标');
+      if (!stopReason) {
+
+        const last = this._stepResults && this._stepResults.length ? this._stepResults[this._stepResults.length - 1] : null;
+        const dg = TuneDiag.diagnose('STOP_MAX_ITER', { detail: last ? ('最后一轮 超调=' + last.os.toFixed(1) + '% 稳态误差=' + last.se.toFixed(1) + '% 调节时间=' + Math.round(last.st) + 'ms') : '' });
+        this._results[ch].diagnostic = dg;
+        this._results[ch].stopReason = '达到最大迭代 ' + this._maxIterations + ' 轮仍未达标';
+      } else {
+        this._results[ch].stopReason = stopReason;
+      }
       console.log('[AutoTune] ⚠ 未完全收敛: ' + this._results[ch].stopReason);
     }
 
@@ -9047,6 +9562,7 @@ const AutoTune = {
       })();
       this._verifyTimer = setTimeout(() => {
         const samples = this._verifySamples;
+        this._lastVerifySamples = samples.slice(); this._lastVerifyTarget = target;
         this._verifyMode = 'idle';
         if (this._aborted) { this._verifyResolve = null; resolve(null); return; }
         const periodMs = (this._backupAll && this._backupAll[ch]) ? (this._backupAll[ch].period || 10) : 10;
@@ -9587,6 +10103,21 @@ const AutoTune = {
     await this._stopMotorsOpen();
     this._aborted = true;
     this.state = 'failed';
+
+
+
+    {
+      const r = this._results && this._results[this._ch];
+      if (r) {
+        const dcode = this._safetyFailReason ? TuneDiag.safetyCode(this._safetyFailReason) : 'USER_ABORT';
+        if (!r.stopReason) r.stopReason = this._safetyFailReason || '用户中止';
+        if (!r.diagnostic) r.diagnostic = TuneDiag.diagnose(dcode, { detail: this._safetyFailReason || '' });
+      }
+      if (this._verifyResolve) {
+        this._lastVerifySamples = (this._verifySamples || []).slice();
+        this._lastVerifyTarget = this._verifyTarget || 0;
+      }
+    }
     if (this._safetyFailReason) TuneExperiment.abort(this._safetyFailReason);
     else TuneExperiment.abort('USER_ABORT');
 
@@ -9785,6 +10316,14 @@ const AutoTune = {
     }
     const ci = this._ch;
     const b = this._backupAll && this._backupAll[ci];
+    const res = this._results && this._results[ci];
+
+    const ver = (typeof MDC_VER !== 'undefined') ? MDC_VER : null;
+    const fwVer = ver ? ('v' + (ver.fwA || ver.hwA) + '.' + ver.swD + '.' + ver.swE) : '';
+    const hwVer = ver ? ('v' + ver.hwA + '.' + ver.hwB + '.' + ver.hwC) : '';
+    const cfgSize = (typeof CONFIG_SIZE !== 'undefined') ? CONFIG_SIZE : 248;
+    const cfgHex = (typeof deviceConfig !== 'undefined' && deviceConfig && deviceConfig.length === cfgSize)
+      ? Array.prototype.map.call(deviceConfig, function (x) { return x.toString(16).padStart(2, '0'); }).join('') : '';
     const meta = TuneLog.defaultMeta({
       motorId: ((document.getElementById('tune-motor-id') || {}).value || '').trim(),
       loadNote: ((document.getElementById('tune-load-note') || {}).value || '').trim(),
@@ -9797,11 +10336,22 @@ const AutoTune = {
       model: this._model ? ('K=' + this._model.K.toFixed(4) + ' tau=' + this._model.tau.toFixed(1) + 'ms L=' + this._model.L.toFixed(1) + 'ms R2=' + this._model.R2.toFixed(3)) : '',
       pid: (this.tunedKp !== undefined) ? ('Kp=' + this.tunedKp.toFixed(5) + ' Ki=' + this.tunedKi.toFixed(7) + ' Kd=' + this.tunedKd.toFixed(5) + ' Ilim=' + this.tunedIlim) : '',
       subscribeMs: '20 (整定期间)',
+      fwVersion: fwVer,
+      hwVersion: hwVer,
+      deviceConfigHex: cfgHex,
+      tuneContent: (this._doPid && this._doFilter) ? 'speedPID+filter' : (this._doPid ? 'speedPID' : (this._doFilter ? 'filter' : '')),
+      pidType: this._ptype === 0 ? 'positional' : (this._ptype === 1 ? 'incremental' : ''),
+      tuneTargets: JSON.stringify({ settleMs: this._speedSettleMs, osMaxPct: this._targetOS, seMaxPct: this._targetSE }),
+      stepPwm: this._stepPwm || '',
+      workpoints: JSON.stringify((res && res.workpoints) || []),
+      diagCode: (res && res.diagnostic ? res.diagnostic.code : ''),
+      diagTitle: (res && res.diagnostic ? res.diagnostic.title : ''),
+      verifyTrace: JSON.stringify({ target: this._lastVerifyTarget || null, samples: this._lastVerifySamples || [] }),
+      advisories: (res && res.advisories && res.advisories.length) ? res.advisories.map(a => a.code + (a.detail ? ':' + a.detail : '')).join(' | ') : '',
       notes: '任务书§29 原始实验数据, 时间轴=performance.now()'
     });
 
 
-    const res = this._results && this._results[ci];
     if (res) {
 
       if (res.filterCondition) {
@@ -9820,7 +10370,12 @@ const AutoTune = {
         stopReason: res.stopReason || '',
         finalAccepted: !!(res.final && res.final.accepted),
         reason: (res.final && res.final.reason) || '',
-        pidVerification: (res.pidVerification || []).map(v => ({ t: v.targetRPM, os: v.overshoot, se: v.steadyError, st: v.settlingTime, iae: v.iae }))
+        pidVerification: (res.pidVerification || []).map(v => ({ t: v.targetRPM, os: v.overshoot, se: v.steadyError, st: v.settlingTime, iae: v.iae })),
+
+        crossValidate: (res.identification && res.identification.crossValidate) ? {
+          ok: !!res.identification.crossValidate.ok,
+          maxErrPct: Number.isFinite(res.identification.crossValidate.maxErrPct) ? +res.identification.crossValidate.maxErrPct.toFixed(1) : null
+        } : undefined
       });
     }
     const csv = TuneLog.toCsv(meta, this._logSeries);
@@ -9848,8 +10403,17 @@ const AutoTune = {
     for (const ci of [...this._channels].sort()) {
       const r = this._results[ci];
       if (!r || !r.success) {
-        html += '<div style="color:var(--red);font-size:11px;margin-bottom:4px">CH' + String.fromCharCode(65 + ci) + ': ' +
-          (r && (r.error || r.failureType) ? (r.error || r.failureType) : '失败') + '</div>';
+
+        const dg = r && r.diagnostic;
+        const fallbackTxt = (r && (r.error || r.failureType)) || '失败';
+        html += '<div style="margin-bottom:8px;padding:6px 8px;border:1px solid var(--red);border-radius:6px;background:color-mix(in srgb,var(--red) 6%,transparent)">';
+        html += '<div style="color:var(--red);font-size:11px;font-weight:700">CH' + String.fromCharCode(65 + ci) + ' ❌ ' + (dg ? dg.title : fallbackTxt) + '</div>';
+        if (dg) {
+          if (dg.detail) html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">判定依据: ' + dg.detail + '</div>';
+          html += '<div style="font-size:10px;margin-top:4px"><b>可能原因:</b><br>' + dg.causes.map(c => '· ' + c).join('<br>') + '</div>';
+          html += '<div style="font-size:10px;margin-top:4px"><b>解决方案:</b><br>' + dg.solutions.map(s => '· ' + s).join('<br>') + '</div>';
+        }
+        html += '<div style="font-size:9px;color:var(--muted);margin-top:4px">已还原原配置；点「导出数据」可获取原始采样与设备配置供进一步判别</div></div>';
         continue;
       }
       html += '<div class="tune-result-ch"><b style="color:var(--accent)">电机 ' + String.fromCharCode(65 + ci) + '</b>';
@@ -9859,6 +10423,12 @@ const AutoTune = {
           ' 分辨率=' + (Number.isFinite(m.resolutionRPM) ? m.resolutionRPM.toFixed(1) : '--') + 'rpm/脉冲 每周期脉冲=' + m.pulsesPerPeriod.toFixed(1) +
           ' 噪声std=' + m.stdRPM.toFixed(1) + ' vpp=' + m.vppRPM.toFixed(1) + '</span><br>';
         if (m.issues && m.issues.length) html += ' <span style="color:#b7950b;font-size:10px">' + m.issues.join('; ') + '</span><br>';
+      }
+      if (r.advisories && r.advisories.length) {
+        for (const ad of r.advisories) {
+          html += ' <div style="font-size:10px;color:#b7950b;margin-top:2px">⚠ ' + ad.title + (ad.detail ? '：' + ad.detail : '') + '</div>';
+          if (ad.solutions && ad.solutions.length) html += ' <div style="font-size:9px;color:var(--muted)">' + ad.solutions[0] + '</div>';
+        }
       }
       if (r.identification) {
         const id = r.identification;
