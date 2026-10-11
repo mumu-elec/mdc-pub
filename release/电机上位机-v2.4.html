@@ -596,6 +596,39 @@ body.perf-testing #timeline-bar{pointer-events:none;opacity:.45}
 .dark .exp-cfg-src .token.tag{color:#7ee787}
 .dark .exp-cfg-src .token.selector,.dark .exp-cfg-src .token.important,.dark .exp-cfg-src .token.atrule{color:#d2a8ff}
 
+
+#tune-panel{transition:width .22s ease}
+#tune-panel.tune-wide{width:840px}
+#tune-panel .tune-body{flex-direction:row;gap:10px;overflow:hidden}
+#tune-panel .tune-main{flex:0 0 352px;min-width:0;overflow-y:auto;max-height:100%;padding-right:2px}
+#tune-panel.tune-wide .tune-main{flex:0 0 380px}
+#tune-panel .tune-main::-webkit-scrollbar{width:5px}
+#tune-panel .tune-main::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--r-sm)}
+#tune-result.tune-side{flex:1 1 0;min-width:0;min-height:0;align-self:stretch;overflow-y:auto;margin:0;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r-md);font-size:11px}
+#tune-result.tune-side::-webkit-scrollbar{width:5px}
+#tune-result.tune-side::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--r-sm)}
+#tune-result.tune-side summary{list-style:none}
+#tune-result.tune-side summary::-webkit-details-marker{display:none}
+@media (max-width:900px){#tune-panel.tune-wide{width:calc(100vw - 16px)}#tune-panel.tune-wide .tune-main{flex:0 0 340px}}
+
+
+#tune-panel .tune-side-wrap{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:8px}
+#tune-panel .tune-side-actions{display:flex;gap:8px;flex:0 0 auto}
+#tune-panel .tune-side-actions .btn-secondary,#tune-panel .tune-side-actions .btn-ghost{flex:1 1 50%;margin:0;justify-content:center}
+#tune-result.tune-side .tune-res-head{font-size:12px;margin-bottom:4px}
+#tune-result.tune-side .tune-res-sec{font-size:10px;color:var(--accent);margin:9px 0 4px;font-weight:600;letter-spacing:.3px}
+#tune-result.tune-side .tune-res-sec:first-of-type{margin-top:4px}
+#tune-result.tune-side .tune-res-sub{font-size:11px;line-height:1.9}
+
+
+#tune-panel .btns>button{height:34px;padding:0 8px}
+#tune-panel .tune-side-actions button{height:34px;padding:0 8px;font-size:var(--fs-md);font-weight:600;border-radius:var(--r-sm);display:inline-flex;align-items:center;justify-content:center;gap:4px}
+#tune-result.tune-side .tune-res-table{display:inline-grid;gap:3px 24px;font-size:12px;vertical-align:top}
+#tune-result.tune-side .tune-res-table.cols-4{grid-template-columns:repeat(4,auto)}
+#tune-result.tune-side .tune-res-table.cols-3{grid-template-columns:repeat(3,auto)}
+#tune-result.tune-side .tune-res-table .h{font-size:10px;color:var(--muted);white-space:nowrap}
+#tune-result.tune-side .tune-res-table b{font-weight:600;font-size:12px;white-space:nowrap}
+
 </style>
 </head>
 <body>
@@ -5722,7 +5755,8 @@ const TuneEngine = {
     bad('overshoot', '超调量', (m.overshootPct !== undefined ? m.overshootPct.toFixed(2) + '%' : 'n/a'),
       (m.overshootPct !== undefined && m.overshootPct > targetOS) ? 'BAD' : 'OK');
 
-    const settleOk = m.settleTimeMs !== undefined && m.settleTimeMs > 0 && m.settleTimeMs <= tsMs * 1.3;
+    const stLimitMs = (m.stLimitMs !== undefined && m.stLimitMs > 0) ? m.stLimitMs : tsMs * 1.3;
+    const settleOk = m.settleTimeMs !== undefined && m.settleTimeMs > 0 && m.settleTimeMs <= stLimitMs;
     bad('settleTime', '调节时间', (m.settleTimeMs !== undefined && m.settleTimeMs > 0) ? m.settleTimeMs.toFixed(0) + 'ms' : '未稳定', settleOk ? 'OK' : 'BAD');
 
     bad('riseTime', '上升时间', (m.riseTimeMs !== undefined ? m.riseTimeMs.toFixed(0) + 'ms' : 'n/a'),
@@ -6327,18 +6361,16 @@ const TuneDiag = {
   checkDirection(workpoints, fwdFit, revFit) {
     const pts = (workpoints || []).filter(w => w && w.success === true && Math.abs(w.rpm) > 1e-6);
     const parts = [];
-
-
     let reversedByFit = false;
     if (fwdFit && fwdFit.K !== undefined) {
       parts.push('正向斜率' + (fwdFit.K > 0 ? '+' : '') + fwdFit.K.toFixed(2));
       if (fwdFit.K < 0) reversedByFit = true;
     }
     if (revFit && revFit.K !== undefined) {
-      parts.push('反向斜率' + (revFit.K > 0 ? '+' : '') + revFit.K.toFixed(2) + '(反向为正是异常)');
-      if (revFit.K > 0) reversedByFit = true;
+      parts.push('负向斜率' + (revFit.K > 0 ? '+' : '') + revFit.K.toFixed(2));
+      if (revFit.K < 0) reversedByFit = true;
     }
-    if (reversedByFit) return { code: 'DIRECTION_REVERSED', mixed: false, evidence: parts.join(' ') };
+    if (reversedByFit) return { code: 'DIRECTION_REVERSED', mixed: false, evidence: parts.join(' ') + '（转速随指令反向变化）' };
 
     if (pts.length >= 2) {
       const wrong = pts.filter(w => (w.rpm > 0) !== (w.pwm > 0));
@@ -6375,6 +6407,12 @@ const TuneDiag = {
       return { code: 'VERIFY_DIRECTION_FLYWHEEL', detail: '目标 ' + Math.round(target) + 'rpm，反向最大 ' + Math.round(maxOpp) + 'rpm（疑似方向反转）' };
     }
     return { code: 'VERIFY_FAIL', detail: '最大|转速|=' + Math.round(maxAbs) + 'rpm，目标 ' + Math.round(target) + 'rpm' };
+  },
+
+
+
+  deadzoneReverse(rpm, dir) {
+    return Math.abs(rpm) > 50 && (rpm > 0) !== (dir > 0);
   },
 
 
@@ -8433,7 +8471,7 @@ const AutoTune = {
       } else {
         TuneExperiment.setPhase('FAILED');
         this.state = 'failed';
-        this._setStatus('⚠ 无通道通过最终验收，未应用任何参数（已还原原配置）');
+        this._setStatus('⚠ 无通道通过最终验收（原配置已还原）。若整定参数仍想试用，可点击「应用」（未通过自动验收，请自行确认效果）');
       }
       this._setUI('idle'); this._setProgress(100, this.state === 'done' ? 'done' : 'failed'); this._setPhaseLabel('');
       if (typeof userScrolled !== 'undefined') userScrolled = false;
@@ -8628,6 +8666,9 @@ const AutoTune = {
     const period = (this._backupAll && this._backupAll[ch]) ? (this._backupAll[ch].period || 10) : 10;
 
 
+
+
+    this._dirReversalEvidence = '';
     await this._sendCmd('/mode ' + (ch + 1) + ' open');
     updateLocalCtrlMode(ch, 0);
     await sleep(100);
@@ -8645,6 +8686,25 @@ const AutoTune = {
     const mode = this._filterModes ? this._filterModes[ch] : 'disabled';
     this._results[ch] = this._results[ch] || {};
     console.log('[AutoTune] CH' + (ch + 1) + ' filter_mode=' + mode + (this._filterSel ? ' (filterSel应用后更新)' : ''));
+
+
+    if (this._dirReversalEvidence) {
+      const dg = TuneDiag.diagnose('DIRECTION_REVERSED', { detail: this._dirReversalEvidence });
+      this._results[ch].success = false;
+      this._results[ch].failureType = 'DIRECTION_REVERSED';
+      this._results[ch].stopReason = dg.title;
+      this._results[ch].diagnostic = dg;
+      this._results[ch].error = dg.title + '（' + this._dirReversalEvidence + '）';
+      TuneExperiment.failChannel(ch, 'DIRECTION_REVERSED');
+      this._dirReversalEvidence = '';
+
+      if (mode === 'auto_tuned') {
+        const b = this._backupAll && this._backupAll[ch];
+        if (b) { this._aborted = false; await this._restoreChannelToRAM(ch, b); }
+      }
+      this._setStatus('CH' + String.fromCharCode(65 + ch) + ' ' + dg.title + '，已中止整定');
+      return;
+    }
 
 
     this._tauCl = Math.max(5, Math.min(2000, this._speedSettleMs / 4));
@@ -8871,7 +8931,9 @@ const AutoTune = {
   _analyzePidResult(ch, olim, period) {
     const r = this._results && this._results[ch];
     const pv = (r && r.pidVerification) || [];
-    const v = pv[pv.length - 1] || null;
+
+
+    const v = pv[0] || null;
     const mq = (r && r.measurement) || {};
     const eff = this._effectiveFilter(ch);
     const filtDelayMs = (eff && eff.type > 0) ? TuneEngine.estimateDelay(eff.type, eff.win, period) : 0;
@@ -8903,7 +8965,9 @@ const AutoTune = {
       feedbackDelayMs: filtDelayMs + ((v && v.obsT) || 20),
       outputSaturation: outSat,
       integralSaturation: intSat,
-      targetOS: this._targetOS, targetSE: this._targetSE, tsMs: this._speedSettleMs
+      targetOS: this._targetOS, targetSE: this._targetSE, tsMs: this._speedSettleMs,
+
+      stLimitMs: Math.max(this._speedSettleMs * 1.3, 2.5 * ((this.tau || 0) + (this.tunedL || 0)))
     });
   },
 
@@ -9056,9 +9120,14 @@ const AutoTune = {
       const os = m.overshootPct, se = m.steadyErrPct, rawSt = m.settled ? m.settleTime : 0;
       const st = rawSt > 0 ? rawSt : 9999;
       const osc = m.oscillations;
-      const meetSettle = rawSt > 0 && rawSt >= this._speedSettleMs * 0.85 && rawSt <= this._speedSettleMs * 1.15;
+
+
+
+      const stLo = this._speedSettleMs * 0.5;
+      const stHi = Math.max(this._speedSettleMs * 1.15, 2.5 * ((this.tau || 0) + (this.tunedL || 0)));
+      const meetSettle = rawSt > 0 && rawSt >= stLo && rawSt <= stHi;
       const meetOS = os <= this._targetOS, meetSE = se <= this._targetSE;
-      this._stepResults.push({ round: this._iterRound + 1, os, se, st, osc, meetSettle, meetOS, meetSE, settled: rawSt > 0 });
+      this._stepResults.push({ round: this._iterRound + 1, os, se, st, osc, meetSettle, meetOS, meetSE, settled: rawSt > 0, stLo: Math.round(stLo), stHi: Math.round(stHi) });
       console.log('[AutoTune] ' + iterLabel + ' os=' + os.toFixed(1) + '% se=' + se.toFixed(1) + '% st=' + st.toFixed(0) +
         'ms osc=' + osc + ' (目标 st≈' + this._speedSettleMs + 'ms os≤' + this._targetOS + '% se≤' + this._targetSE + '%)');
       const result = this._results[ch];
@@ -9072,8 +9141,8 @@ const AutoTune = {
 
       if (os > this._targetOS) { this._tauCl = TuneEngine.lambdaIterate('overshoot', this._tauCl, 0); console.log('[AutoTune] 超调→τ_cl↑(保守)'); }
       else if (se > this._targetSE) { this._tauCl = TuneEngine.lambdaIterate('steadyError', this._tauCl, 0); console.log('[AutoTune] 稳态误差→τ_cl微增'); }
-      else if (st > this._speedSettleMs * 1.15) { this._tauCl = TuneEngine.lambdaIterate('tooSlow', this._tauCl, 0); console.log('[AutoTune] 响应慢→τ_cl↓(更快)'); }
-      else if (st > 0 && st < this._speedSettleMs * 0.85) { this._tauCl = TuneEngine.lambdaIterate('tooFast', this._tauCl, 0); console.log('[AutoTune] 响应快→τ_cl↑(回保守)'); }
+      else if (st > stHi) { this._tauCl = TuneEngine.lambdaIterate('tooSlow', this._tauCl, 0); console.log('[AutoTune] 响应慢→τ_cl↓(更快)'); }
+      else if (st > 0 && st < stLo) { this._tauCl = TuneEngine.lambdaIterate('tooFast', this._tauCl, 0); console.log('[AutoTune] 响应快→τ_cl↑(回保守)'); }
       this._tauCl = Math.max(5, Math.min(2000, this._tauCl));
     }
     if (!converged) {
@@ -9238,6 +9307,7 @@ const AutoTune = {
   async _startIdDeadzone(dir) {
     this._dzDir = dir; this._dzPwm = 50;
     this._idState = 'deadzone';
+    this._dzWrongCount = 0;
     this._phaseStartTick = performance.now();
     await this._sendMotorCh(this._ch, dir * this._dzPwm);
     this._lastCommTick = performance.now();
@@ -9253,10 +9323,22 @@ const AutoTune = {
 
   _onRpmDeadzone(rpm) {
     if (this._idState !== 'deadzone') return;
+    if (this._phaseChanging) return;
     const now = performance.now();
     if (now - this._phaseStartTick < 400) return;
     this._phaseStartTick = now;
     const dir = this._dzDir;
+
+    const wrongDir = TuneDiag.deadzoneReverse(rpm, dir);
+    this._dzWrongCount = wrongDir ? (this._dzWrongCount || 0) + 1 : 0;
+    if (this._dzWrongCount >= 2) {
+      this._dirReversalEvidence = (dir > 0 ? '正向' : '负向') + '扫描: 指令 ' + (dir * this._dzPwm) + ' → 转速 ' + Math.round(rpm) + ' rpm（反向转动）';
+      console.warn('[AutoTune] 方向反转（死区扫描期检出）:', this._dirReversalEvidence);
+      this._deadzone[dir === 1 ? 'fwd' : 'rev'] = 0;
+      if (this._dzTimer) clearTimeout(this._dzTimer);
+      this._finishCurrentPhase();
+      return;
+    }
     const moved = Math.abs(rpm) > 10 && (rpm >= 0) === (dir >= 0);
     if (moved) {
       this._deadzone[dir === 1 ? 'fwd' : 'rev'] = this._dzPwm;
@@ -9795,7 +9877,8 @@ const AutoTune = {
 
 
   async apply() {
-    if (this.state !== 'done') return;
+
+    if (this.state !== 'done' && this.state !== 'failed') return;
     await this._doApply(true);
   },
 
@@ -9804,9 +9887,13 @@ const AutoTune = {
   async _doApply(force) {
     if (!this._results) return;
     this._setStatus('发送参数到 MCU...');
+    let forcedCount = 0;
     for (const ci of Object.keys(this._results)) {
       const r = this._results[ci];
-      if (!r || !r.success || !r.final || !r.final.accepted) continue;
+      if (!r || !r.success || !r.final) continue;
+      const isAccepted = !!r.final.accepted;
+
+      if (!isAccepted && !force) continue;
 
 
       if (r.filterSuggested && !force) {
@@ -9814,6 +9901,7 @@ const AutoTune = {
         if (ob) await this._restoreChannelToRAM(ci, ob);
         continue;
       }
+      if (!isAccepted && r.tunedKp !== undefined) forcedCount++;
       const speedWasTuned = (r.speedTuned !== false) && (r.tunedKp !== undefined);
       if (speedWasTuned) {
         document.getElementById('kp_' + ci).value = r.tunedKp.toFixed(4);
@@ -9859,7 +9947,8 @@ const AutoTune = {
       }
     }
     if (typeof rw === 'function') rw('write');
-    this._setStatus('✅ 参数已同步到 MCU 和主面板');
+    this._setStatus('✅ 参数已同步到 MCU 和主面板' +
+      (forcedCount > 0 ? '（' + forcedCount + ' 通道未通过自动验收，已按你的要求应用——请注意观察实际效果，满意后可点「保存参数」写入 EEPROM）' : ''));
   },
 
   async save() {
@@ -10009,6 +10098,11 @@ const AutoTune = {
     const el = document.getElementById('tune-result');
     if (!el) return;
     el.style.display = 'block';
+    const wrap = document.getElementById('tune-side-wrap');
+    if (wrap) wrap.style.display = 'flex';
+    const panel = document.getElementById('tune-panel');
+    if (panel) panel.classList.add('tune-wide');
+    const cell = (label, value) => '<div class="tune-res-cell"><label>' + label + '</label><b>' + value + '</b></div>';
     let html = '<div style="font-weight:700;margin-bottom:6px;color:var(--accent)">📊 整定结果</div>';
     for (const ci of [...this._channels].sort()) {
       const r = this._results[ci];
@@ -10026,13 +10120,42 @@ const AutoTune = {
         html += '<div style="font-size:9px;color:var(--muted);margin-top:4px">已还原原配置；点「导出数据」可获取原始采样与设备配置供进一步判别</div></div>';
         continue;
       }
-      html += '<div class="tune-result-ch"><b style="color:var(--accent)">电机 ' + String.fromCharCode(65 + ci) + '</b>';
-      if (r.measurement) {
-        const m = r.measurement;
-        html += ' <span style="color:var(--muted);font-size:10px">测速: ' + (m.ok ? '✅' : '⚠') +
-          ' 分辨率=' + (Number.isFinite(m.resolutionRPM) ? m.resolutionRPM.toFixed(1) : '--') + 'rpm/脉冲 每周期脉冲=' + m.pulsesPerPeriod.toFixed(1) +
-          ' 噪声std=' + m.stdRPM.toFixed(1) + ' vpp=' + m.vppRPM.toFixed(1) + '</span><br>';
-        if (m.issues && m.issues.length) html += ' <span style="color:#b7950b;font-size:10px">' + m.issues.join('; ') + '</span><br>';
+      html += '<div class="tune-result-ch"><div class="tune-res-head"><b style="color:var(--accent)">电机 ' + String.fromCharCode(65 + ci) + '</b>';
+
+      const pvMain = (r.pidVerification && r.pidVerification.length) ? r.pidVerification[0] : null;
+      const resTable = (cols, head, vals) => '<div class="tune-res-table cols-' + cols + '">' +
+        head.map(h2 => '<span class="h">' + h2 + '</span>').join('') +
+        vals.map(v2 => '<b>' + v2 + '</b>').join('') + '</div>';
+      if (r.speedTuned && r.tunedKp !== undefined) {
+        html += (r.converged ? ' <span style="color:var(--green)">✅ 已收敛</span>' : ' <span style="color:#b7950b">⚠ 未完全收敛</span>');
+        if (r.iterations !== undefined) html += ' <span style="color:var(--muted);font-size:10px">共' + r.iterations + '轮</span>';
+        html += '</div>';
+        html += '<div class="tune-res-sec">PID 参数</div>' + resTable(4,
+          ['Kp', 'Ki', 'Kd', 'Ilim'],
+          [r.tunedKp.toFixed(4), r.tunedKi.toFixed(6), r.tunedKd.toFixed(4), String(Math.round(r.tunedIlim))]);
+        if (pvMain) {
+          html += '<div class="tune-res-sec">主目标档验证（' + Math.round(pvMain.targetRPM) + ' rpm）</div>' + resTable(3,
+            ['调节时间', '超调', '稳态误差'],
+            [pvMain.settlingTime < 0 ? '--' : Math.round(pvMain.settlingTime) + 'ms',
+             pvMain.overshoot < 0 ? '--' : pvMain.overshoot.toFixed(1) + '%',
+             pvMain.steadyError < 0 ? '--' : pvMain.steadyError.toFixed(1) + '%']);
+        }
+      } else {
+        html += '</div>';
+      }
+      if (r.identification) {
+        const id = r.identification;
+        const Kabs = Math.abs(id.K) || 0;
+        const objW = id.tau > 0 ? 1000 / id.tau : 0;
+        const lv = (r.pidVerification && r.pidVerification.length) ? r.pidVerification[r.pidVerification.length - 1] : null;
+        const clW = (r.speedTuned && r.tunedKp !== undefined && Kabs > 0) ? Kabs * Math.abs(r.tunedKp) : 0;
+        const clWm = (lv && Number.isFinite(lv.riseTime) && lv.riseTime > 0) ? ((lv.overshoot !== undefined && lv.overshoot > 10) ? 500 / lv.riseTime : 350 / lv.riseTime) : 0;
+        html += '<div class="tune-res-sec">增益与带宽</div>' + resTable(4,
+          ['增益 RPM/PWM', '固有带宽 rad/s', '闭环带宽 rad/s', '实测闭环 rad/s'],
+          [Kabs.toFixed(2),
+           objW > 0 ? objW.toFixed(1) : '--',
+           clW > 0 ? clW.toFixed(1) : '--',
+           clWm > 0 ? clWm.toFixed(1) : '--']);
       }
       if (r.advisories && r.advisories.length) {
         for (const ad of r.advisories) {
@@ -10040,33 +10163,27 @@ const AutoTune = {
           if (ad.solutions && ad.solutions.length) html += ' <div style="font-size:9px;color:var(--muted)">' + ad.solutions[0] + '</div>';
         }
       }
+
+      html += '<details style="margin-top:3px"><summary style="cursor:pointer;font-size:10px;color:var(--muted);user-select:none;outline:none">详细数据 ▸</summary><div style="font-size:10px;color:var(--muted);margin-top:3px;line-height:1.6">';
+      if (r.measurement) {
+        const m = r.measurement;
+        html += '测速: ' + (m.ok ? '✅' : '⚠') +
+          ' 分辨率=' + (Number.isFinite(m.resolutionRPM) ? m.resolutionRPM.toFixed(1) : '--') + 'rpm/脉冲 每周期脉冲=' + m.pulsesPerPeriod.toFixed(1) +
+          ' 噪声std=' + m.stdRPM.toFixed(1) + ' vpp=' + m.vppRPM.toFixed(1);
+        if (m.issues && m.issues.length) html += '；' + m.issues.join('; ');
+        html += '<br>';
+      }
       if (r.identification) {
         const id = r.identification;
-        html += ' <span style="color:var(--muted);font-size:10px">辨识 K=' + id.K.toFixed(3) + ' τ=' + id.tau.toFixed(0) + 'ms L=' + id.L.toFixed(0) + 'ms R²=' + id.R2.toFixed(2) + '</span>';
-        if (r.crossValidate) html += ' <span style="color:' + (r.crossValidate.ok ? 'var(--green)' : '#b7950b') + ';font-size:10px">交叉验证:' + (r.crossValidate.ok ? 'PASS' : '见备注') + ' maxErr=' + (Number.isFinite(r.crossValidate.maxErrPct) ? r.crossValidate.maxErrPct.toFixed(0) + '%' : '--') + '</span>';
+        html += '辨识 K=' + id.K.toFixed(3) + ' τ=' + id.tau.toFixed(0) + 'ms L=' + id.L.toFixed(0) + 'ms R²=' + id.R2.toFixed(2);
+        if (r.crossValidate) html += ' · 交叉验证:' + (r.crossValidate.ok ? 'PASS' : '见备注') + ' maxErr=' + (Number.isFinite(r.crossValidate.maxErrPct) ? r.crossValidate.maxErrPct.toFixed(0) + '%' : '--');
         html += '<br>';
-
-        {
-          const Kabs = Math.abs(id.K) || 0;
-          const objW = id.tau > 0 ? 1000 / id.tau : 0;
-          const lv = (r.pidVerification && r.pidVerification.length) ? r.pidVerification[r.pidVerification.length - 1] : null;
-          const clW = (r.speedTuned && r.tunedKp !== undefined && Kabs > 0) ? Kabs * Math.abs(r.tunedKp) : 0;
-          const clWm = (lv && lv.riseTime > 0) ? 2000 * Math.PI * ((lv.overshoot !== undefined && lv.overshoot > 10) ? 0.5 : 0.35) / lv.riseTime : 0;
-          html += ' <span style="color:var(--accent);font-size:10px" title="对象带宽=1/τ；闭环带宽(理论)=Kp·K(P控制一阶近似)；实测闭环带宽≈0.35/t_rise(超调&gt;10% 用 0.5/t_rise)">增益 K=' + Kabs.toFixed(3) + ' RPM/PWM' +
-            (objW > 0 ? ' · 对象带宽 ω=' + objW.toFixed(2) + ' rad/s <span style="color:var(--muted)">(1/τ)</span>' : '') +
-            (clW > 0 ? ' · 闭环带宽 ω=' + clW.toFixed(2) + ' rad/s <span style="color:var(--muted)">(Kp·K)</span>' : '') +
-            (clWm > 0 ? ' · 实测闭环 ω=' + clWm.toFixed(2) + ' rad/s <span style="color:var(--muted)">(' + ((lv.overshoot !== undefined && lv.overshoot > 10) ? '0.5' : '0.35') + '/t_rise)</span>' : '') +
-            '</span><br>';
-        }
-        if (r.deadzoneRunPWM) html += ' <span style="color:var(--muted);font-size:10px">死区 动/静: 正 ' + (r.deadzonePWM || 0) + '/' + r.deadzoneRunPWM.fwd.toFixed(0) + ' 反 ' + (r.deadzoneRevPWM || 0) + '/' + r.deadzoneRunPWM.rev.toFixed(0) + ' PWM</span><br>';
+        if (r.deadzoneRunPWM) html += '死区 动/静: 正 ' + (r.deadzonePWM || 0) + '/' + r.deadzoneRunPWM.fwd.toFixed(0) + ' 反 ' + (r.deadzoneRevPWM || 0) + '/' + r.deadzoneRunPWM.rev.toFixed(0) + ' PWM<br>';
       }
       if (r.speedTuned && r.tunedKp !== undefined) {
-        html += (r.converged ? ' <span style="color:var(--green)">✅ 已收敛</span>' : ' <span style="color:#b7950b">⚠ 未完全收敛</span>');
-        if (r.iterations !== undefined) html += ' <span style="color:var(--muted);font-size:10px">共' + r.iterations + '轮</span>';
-        html += '<br>参数: Kp=' + r.tunedKp.toFixed(4) + ' Ki=' + r.tunedKi.toFixed(6) + ' Kd=' + r.tunedKd.toFixed(4) + ' Ilim=' + r.tunedIlim + (r.tunedL !== undefined ? ' (L=' + r.tunedL.toFixed(0) + 'ms)' : '');
-        html += '<br>PID验证:';
+        html += 'PID验证(六档): ';
         const pv = r.pidVerification || [];
-        if (pv.length) { for (const v of pv) html += '<span style="font-size:10px">[' + Math.round(v.targetRPM) + 'rpm OS=' + (v.overshoot < 0 ? '--' : v.overshoot.toFixed(1) + '%') + ' ST=' + (v.settlingTime < 0 ? '--' : Math.round(v.settlingTime) + 'ms') + ' SE=' + (v.steadyError < 0 ? '--' : v.steadyError.toFixed(1) + '%') + (v.iae !== undefined && v.iae > 0 ? ' IAE=' + v.iae.toFixed(0) : '') + ']</span> '; }
+        if (pv.length) { for (const v of pv) html += '[' + Math.round(v.targetRPM) + 'rpm OS=' + (v.overshoot < 0 ? '--' : v.overshoot.toFixed(1) + '%') + ' ST=' + (v.settlingTime < 0 ? '--' : Math.round(v.settlingTime) + 'ms') + ' SE=' + (v.steadyError < 0 ? '--' : v.steadyError.toFixed(1) + '%') + (v.iae !== undefined && v.iae > 0 ? ' IAE=' + v.iae.toFixed(0) : '') + '] '; }
         html += '<br>';
       }
       if (r.doFilter) {
@@ -10074,39 +10191,39 @@ const AutoTune = {
         if (f && f.accepted !== false && r.filterType > 0) {
           const fprm = TuneEngine.filterParams({ type: r.filterType, win: r.filterWin }, (this._backupAll && this._backupAll[ci]) ? (this._backupAll[ci].period || 10) : 10);
           html += '滤波器: ' + (['无', '滑动平均', '一阶低通', '中值'][r.filterType] || '?') + ' w=' + r.filterWin +
-            ' <span style="color:var(--green)">✅ NR=' + (f.noiseReduction !== undefined ? f.noiseReduction.toFixed(1) : (r.fvNoiseReduction || 0).toFixed(1)) + '%</span>' +
-            (fprm.fcHz > 0 ? ' <span style="color:var(--muted);font-size:10px">fc=' + fprm.fcHz.toFixed(1) + 'Hz' + (fprm.alpha > 0 ? ' α=' + fprm.alpha.toFixed(3) : '') + ' τf=' + fprm.tauFms.toFixed(0) + 'ms 延迟=' + fprm.delayMs.toFixed(0) + 'ms Ts=' + fprm.Tms + 'ms</span>' : '');
-          if (r.jointVerification) html += ' <span style="color:' + (r.jointVerification.compatibility === 'PASS' ? 'var(--green)' : 'var(--red)') + '">联合:' + r.jointVerification.compatibility + '</span>';
+            ' ✅ NR=' + (f.noiseReduction !== undefined ? f.noiseReduction.toFixed(1) : (r.fvNoiseReduction || 0).toFixed(1)) + '%' +
+            (fprm.fcHz > 0 ? ' fc=' + fprm.fcHz.toFixed(1) + 'Hz' + (fprm.alpha > 0 ? ' α=' + fprm.alpha.toFixed(3) : '') + ' τf=' + fprm.tauFms.toFixed(0) + 'ms 延迟=' + fprm.delayMs.toFixed(0) + 'ms Ts=' + fprm.Tms + 'ms' : '');
+          if (r.jointVerification) html += ' 联合:' + r.jointVerification.compatibility;
           html += '<br>';
         } else {
-          html += '滤波器: <span style="color:var(--muted)">未应用</span> ' + (r.filterSkip ? ' <span style="color:#b7950b;font-size:10px">' + r.filterSkip + '</span>' : '') + '<br>';
+          html += '滤波器: 未应用 ' + (r.filterSkip ? ' (' + r.filterSkip + ')' : '') + '<br>';
         }
         if (r.fvNoiseReduction !== undefined) html += '滤波A/B: 降噪=' + r.fvNoiseReduction.toFixed(1) + '% 延迟=' + (r.fvDelay || 0).toFixed(0) + 'ms' +
-          (r.fvGate === 'advisory' ? ' <span style="color:var(--muted);font-size:10px">重放=参考(网格未对齐)</span>' : '') + '<br>';
+          (r.fvGate === 'advisory' ? ' (重放=参考,网格未对齐)' : '') + '<br>';
       }
 
       if (r.filterCondition) {
         const fc = r.filterCondition;
         const modeLabel = { auto_tuned: 'auto_tuned(本次整定)', user_configured: 'user_configured(用户配置)', disabled: 'disabled(无滤波)' }[fc.filter_mode] || fc.filter_mode;
-        html += ' <span style="color:var(--muted);font-size:10px">滤波条件: ' + modeLabel;
+        html += '滤波条件: ' + modeLabel;
         if (fc.filter_type > 0) {
           html += ' (' + (['无', '滑动平均', '一阶低通', '中值'][fc.filter_type] || '?') + ' w=' + fc.filter_win +
             ' fc=' + fc.filter_cutoff_frequency.toFixed(1) + 'Hz τf=' + fc.filter_time_constant.toFixed(0) + 'ms α=' + fc.filter_alpha.toFixed(3) +
             ' 延迟=' + fc.filter_delay_ms.toFixed(0) + 'ms)';
         }
-        html += '</span>';
-        if (r.filterSuggested) html += ' <span style="color:#b7950b;font-size:10px">⚠ 新滤波器参数为建议/待确认（未自动覆盖原配置）</span>';
-        if (r.filterAskDeclined) html += ' <span style="color:var(--muted);font-size:10px">用户选择不整定滤波器，保持原配置</span>';
-        if (r.filterRetuneSkip) html += ' <span style="color:#b7950b;font-size:10px">' + r.filterRetuneSkip + '</span>';
+        if (r.filterSuggested) html += ' ⚠ 新滤波器参数为建议/待确认（未自动覆盖原配置）';
+        if (r.filterAskDeclined) html += ' (用户选择不整定滤波器，保持原配置)';
+        if (r.filterRetuneSkip) html += ' ' + r.filterRetuneSkip;
         html += '<br>';
       }
       if (r.pidIssueAnalysis) {
         const ia = r.pidIssueAnalysis;
         const bad = ia.issues.filter(i => i.verdict === 'BAD').map(i => i.label + ':' + i.value);
-        html += ' <span style="font-size:10px;color:' + (ia.ok ? 'var(--green)' : '#b7950b') + '">效果分析: ' +
+        html += '<span style="color:' + (ia.ok ? 'var(--green)' : '#b7950b') + '">效果分析: ' +
           (ia.ok ? '达标' : (bad.length ? '⚠ ' + bad.join('; ') : '⚠ 见备注')) +
           (ia.filterRelated ? ' (与测速/滤波相关: ' + (ia.filterReasons || []).join('; ') + ')' : '') + '</span><br>';
       }
+      html += '</div></details>';
       html += '</div>';
     }
     el.innerHTML = html;
@@ -10121,6 +10238,9 @@ const AutoTune = {
       result = document.getElementById('tune-result');
     if (mode === 'running') {
       if (panel) panel.classList.add('tuning');
+      if (panel) panel.classList.remove('tune-wide');
+      const sidewrap = document.getElementById('tune-side-wrap');
+      if (sidewrap) sidewrap.style.display = 'none';
       if (start) start.style.display = 'none'; if (quick) quick.style.display = 'none';
       if (abort) abort.style.display = ''; if (apply) apply.style.display = 'none'; if (save) save.style.display = 'none';
       if (prog) prog.style.display = ''; if (result) result.style.display = 'none';
@@ -10129,7 +10249,13 @@ const AutoTune = {
       if (start) start.style.display = this._expert ? '' : 'none';
       if (quick) quick.style.display = this._expert ? 'none' : '';
       if (abort) abort.style.display = 'none';
-      if (apply) apply.style.display = (this.state === 'done') ? '' : 'none';
+
+
+      const hasTunable = this._results && Object.keys(this._results).some(ci => {
+        const r = this._results[ci];
+        return r && r.success !== false && r.tunedKp !== undefined;
+      });
+      if (apply) apply.style.display = (this.state === 'done' || (this.state === 'failed' && hasTunable)) ? '' : 'none';
       if (save) save.style.display = (this.state === 'done') ? '' : 'none';
       if (prog && (this.state === 'idle' || this.state === 'failed')) prog.style.display = 'none';
     }
@@ -11106,6 +11232,7 @@ function syncFavicon(){
     </div>
   </div>
   <div class="tune-body" id="tune-body">
+   <div class="tune-main" id="tune-main">
 
     <div style="font-size:11px;color:var(--muted);margin-bottom:3px">整定电机（单选） <span id="tune-ch-hint" style="font-size:10px;color:var(--accent)"></span></div>
     <div class="tune-ch-row" style="margin-bottom:6px">
@@ -11164,8 +11291,6 @@ function syncFavicon(){
     </div>
 
 
-    <div id="tune-result" style="display:none;margin:8px 0;padding:8px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:11px"></div>
-
 
     <div style="display:flex;gap:6px;margin:6px 0">
       <input id="tune-motor-id" placeholder="电机编号(元数据)" style="width:32%;min-width:0" title="写入导出 CSV 元数据">
@@ -11177,8 +11302,15 @@ function syncFavicon(){
     <div class="btns" style="margin-top:8px">
       <button class="btn-secondary" id="btn-tune-start" onclick="AutoTune.start()"><svg class="ic"><use href="#i-play"/></svg> 启动整定</button>
       <button class="btn-danger" id="btn-tune-abort" onclick="AutoTune.abort()" style="display:none"><svg class="ic"><use href="#i-stop"/></svg> 中止</button>
-      <button class="btn-secondary" id="btn-tune-apply" onclick="AutoTune.apply()" style="display:none"><svg class="ic"><use href="#i-in"/></svg> 应用</button>
-      <button class="btn-ghost" id="btn-tune-save" onclick="AutoTune.save()" style="display:none"><svg class="ic"><use href="#i-save"/></svg> 保存</button>
+    </div>
+   </div>
+
+    <div class="tune-side-wrap" id="tune-side-wrap" style="display:none">
+      <div id="tune-result" class="tune-side" style="display:none"></div>
+      <div class="tune-side-actions">
+        <button class="btn-secondary" id="btn-tune-apply" onclick="AutoTune.apply()" style="display:none"><svg class="ic"><use href="#i-in"/></svg> 应用</button>
+        <button class="btn-ghost" id="btn-tune-save" onclick="AutoTune.save()" style="display:none"><svg class="ic"><use href="#i-save"/></svg> 保存</button>
+      </div>
     </div>
   </div>
   <div class="tune-footer">
